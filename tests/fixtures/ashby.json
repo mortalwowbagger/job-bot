@@ -1,0 +1,7 @@
+{"jobs": [
+ {"id": "a1", "title": "Senior SDET", "location": "Remote", "isRemote": true, "isListed": true,
+  "jobUrl": "https://jobs.ashbyhq.com/gamma/a1", "applyUrl": "https://jobs.ashbyhq.com/gamma/a1/application",
+  "descriptionPlain": "Build test infra."},
+ {"id": "a2", "title": "Hidden QA", "location": "Remote", "isRemote": true, "isListed": false,
+  "jobUrl": "https://jobs.ashbyhq.com/gamma/a2", "descriptionPlain": "x"}
+]}

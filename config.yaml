@@ -1,0 +1,136 @@
+# ---------------------------------------------------------------
+# job-bot settings. Edit freely; everything here is read each run.
+# ---------------------------------------------------------------
+
+# LLM provider: claude (default) or grok. Key goes in .env.
+# Claude model IDs: https://platform.claude.com/docs/en/models/overview
+provider: claude
+model_score: claude-haiku-4-5-20251001   # cheap + fast, used to score job fit
+model_write: claude-sonnet-5-5           # better writer, used for resume + cover letter
+# For Grok instead:  provider: grok, model_score/model_write: grok-4.7
+
+min_score: 70              # only tailor jobs scoring at or above this
+max_score_per_run: 60      # cap LLM scoring calls per run (cost control)
+max_tailor_per_run: 15     # cap tailored application packets per run
+daily_apply_limit: 20      # `apply` refuses to open more than this per day
+
+# Location filter
+remote_only: true
+us_only: true
+
+# Title pre-filter (cheap regex check before any LLM call).
+# A job must match at least one include and no exclude pattern.
+title_include:
+  - '\bqa\b'
+  - '\bquality\b'
+  - '\btest(ing|er|s)?\b'
+  - '\bsdet\b'
+  - 'engineer in test'
+  - '\bautomation\b'
+  - '\bdevops\b'
+  - 'test infrastructure'
+  - '\brelease engineer'
+  - '\bbuild (and|&) release\b'
+  - 'developer productivity'
+title_exclude:
+  - '\bintern(ship)?\b'
+  - '\bsupplier\b'
+  - '\bmanufactur'
+  - '\bclinical\b'
+  - '\bmechanical\b'
+  - '\bhardware\b'
+  - '\bfood\b'
+  - '\bcontent quality\b'
+  - '\bdata quality analyst\b'
+  - '\bsales\b'
+  - '\bmarketing\b'
+  - 'account partner'
+  - '\bregulatory\b'
+  - 'customer success'
+  - '\bsolutions?\b'
+  - '\bstrategist\b'
+  - '(people|finance) systems'
+  - 'product (manager|operations)'
+  - '\belectrical\b'
+  - 'search quality|answer quality|evaluation quality'
+  - '\bconsultant\b'
+  - 'engagement manager'
+  - 'program manager'
+  - '\bdesigner\b'
+  - 'accelerator program|new grad|\bgraduate\b|\bstudent\b'
+
+# ---------------------------------------------------------------
+# Job sources. These are PUBLIC job-board feeds the companies publish
+# themselves (no scraping, no login). Add company slugs as you find them:
+#   Greenhouse: job-boards.greenhouse.io/<slug>
+#   Lever:      jobs.lever.co/<slug>
+#   Ashby:      jobs.ashbyhq.com/<slug>
+# Run `python -m jobbot check-boards` to see which slugs work.
+# ---------------------------------------------------------------
+sources:
+  greenhouse:
+    - gitlab
+    - airbnb
+    - dropbox
+    - duolingo
+    - figma
+    - robinhood
+    - coinbase
+    - discord
+    - reddit
+    - instacart
+    - lyft
+    - pinterest
+    - affirm
+    - chime
+    - cloudflare
+    - datadog
+    - elastic
+    - mongodb
+    - twilio
+    - samsara
+    - toast
+    - stripe
+    - brex
+    - gusto
+    - okta
+    - asana
+    - databricks
+    - webflow
+    - vercel          # moved from Ashby
+    # added 2026-09-28: remote-friendly, valid boards (post QA/DevOps roles periodically)
+    - launchdarkly
+    - pagerduty
+    - grafanalabs
+    - newrelic
+    - circleci
+    - bitwarden
+    - zocdoc
+    - sofi
+    - carta
+    - fivetran
+    - betterment
+    - khanacademy
+  lever:
+    - palantir
+    - spotify
+    - veeva           # remote-first, hires QA for life-sciences software
+    - binance         # crypto; has remote QA Automation / DevOps roles
+  ashby:
+    - ramp
+    - notion
+    - linear
+    - supabase
+    - posthog
+    - replit
+    - plaid           # moved from Lever
+    - temporal        # Test Systems & Tooling team
+    - baseten
+    - sardine         # fintech, has a Quality Engineering org
+    - benchling
+    - sentry
+    - vanta
+    - 1password
+  remotive:              # remotive.com public remote-jobs API
+    enabled: true
+    categories: [qa, devops]

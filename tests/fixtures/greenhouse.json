@@ -1,0 +1,9 @@
+{"jobs": [
+ {"id": 111, "title": "Senior QA Automation Engineer", "company_name": "Acme Pay",
+  "location": {"name": "Remote - US"}, "absolute_url": "https://acme.com/careers?gh_jid=111",
+  "content": "&lt;p&gt;We need a &lt;strong&gt;Playwright&lt;/strong&gt; expert.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;5+ years automation&lt;/li&gt;&lt;li&gt;CI/CD&lt;/li&gt;&lt;/ul&gt;"},
+ {"id": 112, "title": "Account Executive", "company_name": "Acme Pay",
+  "location": {"name": "Remote"}, "absolute_url": "https://acme.com/careers?gh_jid=112", "content": "Sell things"},
+ {"id": 113, "title": "QA Engineer", "company_name": "Acme Pay",
+  "location": {"name": "Dublin, Ireland"}, "absolute_url": "https://acme.com/careers?gh_jid=113", "content": "Test things"}
+]}

@@ -1,0 +1,105 @@
+# ---------------------------------------------------------------
+# YOUR SOURCE OF TRUTH. The AI may only reword/reorder what is here.
+#
+#   cp profile.example.yaml profile.yaml   # profile.yaml is gitignored
+#
+# Company names, titles and dates are copied verbatim into every
+# resume - the AI never touches them. Skills the AI lists are filtered
+# against `skills` below, so it can't invent tools you don't know.
+# Numbers ONLY appear in generated text if they are written here.
+#
+# Everything below is a fictional example candidate (also used by the tests).
+# ---------------------------------------------------------------
+
+contact:
+  first_name: Alex
+  last_name: Example
+  email: alex.example@example.com
+  phone: "(555) 010-0000"
+  location: Denver, CO
+  linkedin: "https://www.linkedin.com/in/example"
+  github: "https://github.com/example"
+  current_company: Northwind Bank
+
+targets:
+  roles:
+    - QA Engineer / Senior QA Engineer
+    - SDET / QA Automation Engineer
+    - QA Lead / QA Manager
+    - DevOps / QA infrastructure / CI-CD test infrastructure
+  location: Remote, United States
+  min_salary_usd: null  # e.g. 130000 - jobs listing less get scored down
+  dealbreakers:
+    - Requires relocation or on-site / hybrid attendance
+    - Requires security clearance
+  preferences:
+    - Mobile + web automation (Appium, Playwright)
+    - Fintech, healthtech, or product companies with real CI/CD
+
+summary: >
+  Senior QA Engineer with 9 years designing and executing automated and manual
+  testing strategies for web and mobile applications. Builds automation
+  frameworks from scratch, integrates them into CI/CD, and mentors engineers.
+  Skilled in Appium, Playwright and Selenium across Java, Python and TypeScript.
+
+experience:
+  - company: Northwind Bank
+    location: Denver, CO
+    title: QA Automation Engineer (Contract)
+    dates: March 2026 - Present
+    facts:
+      - Develop and maintain mobile automation tests using Appium with Java for iOS and Android apps.
+      - Execute regression and smoke suites covering core banking workflows.
+      - Investigate test failures and improve automation stability in CI environments.
+
+  - company: Contoso Lending
+    location: Denver, CO
+    title: Automation Engineer
+    dates: January 2024 - December 2025
+    facts:
+      - Built a modular Playwright automation framework integrated into CI/CD pipelines.
+      - Authored end-to-end and integration tests for loan application workflows.
+      - Partnered in sprint planning to define automated acceptance criteria.
+      - Mentored engineers in automation best practices.
+
+  - company: Fabrikam Health
+    location: Boulder, CO
+    title: QA Engineer
+    dates: June 2017 - December 2023
+    facts:
+      - Built automation frameworks for web and mobile apps with Selenium and Appium.
+      - Performed regression, integration and API testing with Postman.
+      - Worked in Agile teams defining acceptance criteria.
+
+skills:
+  - Appium
+  - Playwright
+  - Selenium
+  - API Testing
+  - Postman
+  - TestRail
+  - Python
+  - Java
+  - TypeScript
+  - Ruby
+  - SQL
+  - Git
+  - Jenkins
+  - CI/CD
+  - Jira
+  - iOS
+  - Android
+  - Agile
+
+highlights:
+  - About 3 years mentoring engineers.
+  - Built automation frameworks from scratch at multiple companies (web and mobile).
+
+# Add true, specific facts here (metrics, wins, domains). The AI may use these
+# in bullets and cover letters.
+extra_facts:
+  - Maintained 2 automation test suites at Northwind Bank.
+#  - Cut regression time from X hours to Y minutes.
+
+education: []
+#  - "B.S. ..., University ..., 20XX"

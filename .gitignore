@@ -1,0 +1,13 @@
+.env
+.venv/
+__pycache__/
+jobs.db
+output/
+.browser-profile/
+# personal data - never commit
+profile.yaml
+tracker.csv
+*.db
+# local
+.DS_Store
+.claude/
