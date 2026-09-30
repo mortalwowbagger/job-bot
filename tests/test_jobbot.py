@@ -65,10 +65,19 @@ class TestFilters(unittest.TestCase):
     def test_locations(self):
         self.assertFalse(self.check("QA Engineer", "San Francisco, CA"))
         self.assertFalse(self.check("QA Engineer", "Remote - UK"))
-        self.assertFalse(self.check("QA Engineer", "Hybrid - Austin, TX"))
+        self.assertFalse(self.check("QA Engineer", "Hybrid - Dallas, TX"))
         self.assertFalse(self.check("QA Engineer", "Remote, India"))
         self.assertTrue(self.check("QA Engineer", "Remote - US or Canada"))
         self.assertTrue(self.check("QA Engineer", "Anywhere", remote=True))
+
+    def test_local_areas(self):
+        cfg = dict(CFG, local_areas=["austin"])
+        ok = lambda loc: filters.passes({"title": "QA Engineer", "location": loc}, cfg)[0]
+        self.assertTrue(ok("Austin, TX"))                      # on-site in a local area
+        self.assertTrue(ok("Hybrid - Austin, Texas"))
+        self.assertTrue(ok("San Francisco, CA; Austin, TX"))
+        self.assertFalse(ok("Dallas, TX"))                     # other cities still need remote
+        self.assertFalse(ok("Hybrid - Dallas, TX"))
 
 
 class TestDB(unittest.TestCase):
@@ -225,6 +234,109 @@ class TestClaudeClient(unittest.TestCase):
             with self.assertRaises(llm.RefusalError):
                 llm.chat_json("m", "s", "u", {}, name="x")
         self.assertEqual(len(calls), 1)
+
+
+class TestTracking(unittest.TestCase):
+    def test_migrates_old_database_and_backfills_timeline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "old.db")
+            import sqlite3
+            old = sqlite3.connect(path)
+            old.executescript(db.SCHEMA)
+            old.execute("INSERT INTO jobs (source, ext_id, company, title, status, applied_at) "
+                        "VALUES ('greenhouse','1','Acme','QA','applied','2026-09-01T10:00:00')")
+            old.commit()
+            old.close()
+            con = db.connect(path)
+            cols = {r["name"] for r in con.execute("PRAGMA table_info(jobs)")}
+            self.assertTrue({"contact", "salary", "next_step", "follow_up"} <= cols)
+            self.assertEqual([tuple(e) for e in db.events(con, 1)], [("2026-09-01T10:00:00", "status", "applied")])
+            db.connect(path)  # idempotent: no duplicate backfill
+            self.assertEqual(len(db.events(con, 1)), 1)
+
+    def test_manual_application_and_status_log(self):
+        con = db.connect(":memory:")
+        jid = db.add_manual(con, "Globex", "QA Lead", applied_at="2026-08-15", salary="$130K")
+        db.set_status(con, jid, "interview", note="Onsite next week")
+        db.set_status(con, jid, "interview")  # unchanged: not logged twice
+        row = db.get(con, jid)
+        self.assertEqual((row["source"], row["status"], row["applied_at"], row["salary"]),
+                         ("manual", "interview", "2026-08-15", "$130K"))
+        self.assertEqual([e["text"] for e in db.events(con, jid)], ["applied", "interview", "Onsite next week"])
+
+
+class TestWeb(unittest.TestCase):
+    def setUp(self):
+        from jobbot.web import create_app
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        con = db.connect(str(root / "jobs.db"))
+        job = next(sources.parse_greenhouse("acme", fixture("greenhouse.json")))
+        db.upsert(con, job)
+        pkt = root / "output" / "0001-acme"
+        pkt.mkdir(parents=True)
+        (pkt / "Alex_Example_Resume.pdf").write_bytes(b"%PDF-1.4 test")
+        (pkt / "REVIEW.md").write_text("# t\n\n## Check before submitting\n- [ ] Tool not in profile: 'Go'\n\n## Why it matches\n- x\n")
+        (pkt / "answers.md").write_text("# a\n\n**Why this role?**\n\nBecause.\n")
+        (root / "secret.txt").write_text("nope")
+        db.update(con, 1, status="tailored", score=80, packet_dir=str(pkt),
+                  score_json={"reasons": ["r"], "concerns": [], "dealbreakers": [], "keywords": ["k"]})
+        con.close()
+        self.root = root
+        self.c = create_app(root).test_client()
+        self.h = {"X-JobBot": "1"}
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_list_and_detail(self):
+        rows = self.c.get("/api/jobs?view=review").get_json()
+        self.assertEqual([r["id"] for r in rows], [1])
+        self.assertEqual(rows[0]["warnings"], 1)
+        self.assertIn("job-boards.greenhouse.io/embed/job_app", rows[0]["form_url"])
+        d = self.c.get("/api/jobs/1").get_json()
+        self.assertEqual(d["answers"], [{"q": "Why this role?", "a": "Because."}])
+        self.assertEqual(d["files"]["resume"], "Alex_Example_Resume.pdf")
+        self.assertEqual(self.c.get("/files/1/Alex_Example_Resume.pdf").status_code, 200)
+
+    def test_mark_requires_header_and_valid_status(self):
+        self.assertEqual(self.c.post("/api/jobs/1/mark", json={"status": "applied"}).status_code, 403)
+        self.assertEqual(self.c.post("/api/jobs/1/mark", json={"status": "hired!"},
+                                     headers=self.h).status_code, 400)
+        r = self.c.post("/api/jobs/1/mark", json={"status": "applied", "note": "hi"}, headers=self.h)
+        self.assertEqual(r.get_json()["status"], "applied")
+        con = db.connect(str(self.root / "jobs.db"))
+        self.assertIsNotNone(db.get(con, 1)["applied_at"])
+
+    def test_add_application_details_and_timeline(self):
+        r = self.c.post("/api/jobs", json={"company": "Initech", "title": "SDET", "applied_at": "2026-09-01",
+                                           "salary": "$120K", "url": "https://x.example/job"}, headers=self.h)
+        jid = r.get_json()["id"]
+        self.c.post(f"/api/jobs/{jid}/details", json={"follow_up": "2026-09-10", "contact": "Dana"}, headers=self.h)
+        self.c.post(f"/api/jobs/{jid}/mark", json={"status": "interview"}, headers=self.h)
+        self.c.post(f"/api/jobs/{jid}/events", json={"text": "Phone screen went well"}, headers=self.h)
+        d = self.c.get(f"/api/jobs/{jid}").get_json()
+        self.assertEqual((d["source"], d["status"], d["salary"], d["contact"], d["follow_up"]),
+                         ("manual", "interview", "$120K", "Dana", "2026-09-10"))
+        self.assertEqual([e["text"] for e in d["events"]], ["applied", "interview", "Phone screen went well"])
+        self.assertIn(jid, [x["id"] for x in self.c.get("/api/jobs?view=pipeline").get_json()])
+        self.assertEqual(self.c.get("/api/state").get_json()["follow_ups_due"], 1)  # 2026-09-10 is past
+
+    def test_bad_input_is_rejected(self):
+        bad = [("/api/jobs", {"company": "", "title": "x"}),
+               ("/api/jobs", {"company": "a", "title": "b", "applied_at": "last week"}),
+               ("/api/jobs/1/details", {"follow_up": "soon"}),
+               ("/api/jobs/1/events", {"text": "  "})]
+        for url, body in bad:
+            r = self.c.post(url, json=body, headers=self.h)
+            self.assertEqual(r.status_code, 400, (url, body))
+
+    def test_files_stay_inside_packet(self):
+        for bad in ("..%2Fsecret.txt", "../secret.txt", "REVIEW.py"):
+            self.assertEqual(self.c.get(f"/files/1/{bad}").status_code, 404, bad)
+
+    def test_rejects_foreign_host(self):
+        self.assertEqual(self.c.get("/api/jobs", headers={"Host": "evil.example"}).status_code, 403)
 
 
 class TestEndToEndOffline(unittest.TestCase):

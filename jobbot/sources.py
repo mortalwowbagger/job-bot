@@ -114,11 +114,11 @@ def iter_all(cfg, log=print):
     rem = src.get("remotive") or {}
     if rem.get("enabled"):
         plan += [(fetch_remotive, c) for c in rem.get("categories", [])]
-    for fn, arg in plan:
-        name = f"{fn.__name__.replace('fetch_', '')}:{arg}"
+    for i, (fn, arg) in enumerate(plan, 1):
+        name = f"({i}/{len(plan)}) {fn.__name__.replace('fetch_', '')}:{arg}"
         try:
             jobs = list(fn(arg))
-            log(f"  {name:32s} {len(jobs):4d} jobs")
+            log(f"  {name:40s} {len(jobs):4d} jobs")
             yield from jobs
         except Exception as e:  # noqa: BLE001 - one bad board shouldn't stop the run
-            log(f"  {name:32s} FAILED ({type(e).__name__}: {str(e)[:80]})")
+            log(f"  {name:40s} FAILED ({type(e).__name__}: {str(e)[:80]})")

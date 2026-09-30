@@ -17,6 +17,8 @@ daily_apply_limit: 20      # `apply` refuses to open more than this per day
 # Location filter
 remote_only: true
 us_only: true
+# Also accept on-site / hybrid jobs whose location names one of these (whole words).
+local_areas: [austin, round rock, cedar park, pflugerville, kyle, san marcos]
 
 # Title pre-filter (cheap regex check before any LLM call).
 # A job must match at least one include and no exclude pattern.
@@ -58,6 +60,9 @@ title_exclude:
   - 'program manager'
   - '\bdesigner\b'
   - 'accelerator program|new grad|\bgraduate\b|\bstudent\b'
+  - 'psycholog|physician|\bnurse|clinician|therapist|pharmac'
+  - 'electronics|\brf\b|structures|actuator|propulsion|avionics|firmware|\bpcb\b'
+  - 'credentialing|data modeling|loan salability'
 
 # ---------------------------------------------------------------
 # Job sources. These are PUBLIC job-board feeds the companies publish
@@ -111,11 +116,49 @@ sources:
     - fivetran
     - betterment
     - khanacademy
+    # added 2026-09-29: Austin employers
+    - apptronik       # Austin robotics
+    - braze           # large Austin office
+    - solarwinds      # Austin HQ
+    - selffinancial   # Austin fintech
+    - enthought       # Austin
+    - disco           # CS Disco, Austin legal tech
+    - verkada
+    - alertmedia      # Austin
+    - cultureamp
+    - osano           # Austin privacy SaaS
+    - iterable
+    - scaleai
+    - mixpanel
+    # added 2026-09-29: remote-US engineering hiring
+    - upstart
+    - chainguard
+    - hightouch
+    - current         # fintech, Lead QA opening
+    - wikimedia       # Software Quality Manager opening
+    - mozilla
+    - fleetio
+    - gemini
+    - omadahealth
+    - alloy
+    - calendly
+    - expel
+    - neo4j
+    - zoominfo
   lever:
     - palantir
     - spotify
     - veeva           # remote-first, hires QA for life-sciences software
     - binance         # crypto; has remote QA Automation / DevOps roles
+    - arrivelogistics # Austin HQ, Quality Engineer opening
+    - everlywell      # Austin healthtech
+    - bazaarvoice     # Austin HQ
+    - lyrahealth
+    - metabase
+    - sysdig
+    - coalfire
+    - includedhealth
+    - wpromote
   ashby:
     - ramp
     - notion
@@ -131,6 +174,24 @@ sources:
     - sentry
     - vanta
     - 1password
+    - saronic         # Austin (defense - many roles need clearance)
+    - ontic           # Austin, DevOps openings
+    - zello           # Austin
+    - miro
+    - cerebras        # SDET openings
+    - bestow          # insurtech, Quality Engineer opening
+    - clickup
+    - ashby           # QA Engineer opening
+    - fullstory
+    - headway
+    - kong
+    - jobber
+    - anyscale
+    - astronomer
+    - close
+    - airbyte
+    - prefect
+    - virtahealth
   remotive:              # remotive.com public remote-jobs API
     enabled: true
     categories: [qa, devops]

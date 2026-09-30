@@ -21,7 +21,7 @@ Score 0-100 how strong a match the job is, using these weights:
 - Role fit vs candidate target roles ........ 30
 - Tech stack overlap (tools, languages) ..... 25
 - Seniority / years-of-experience fit ....... 15
-- Remote-in-US compatibility ................ 15
+- Location fit vs candidate targets ......... 15
 - Domain / company fit vs preferences ....... 10
 - Compensation vs minimum (if both known) ... 5
 Be strict: 85+ = would be a top candidate; 70-84 = solid, worth applying;

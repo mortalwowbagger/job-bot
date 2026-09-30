@@ -13,6 +13,13 @@ NON_US = [
     "pakistan", "sweden", "stockholm", "denmark", "copenhagen", "norway", "finland",
     "switzerland", "zurich", "austria", "italy", "belgium", "czech", "prague", "hungary",
     "budapest", "bulgaria", "greece", "chile", "peru", "costa rica", "uruguay",
+    "finland", "espoo", "helsinki", "hyderabad", "pune", "chennai", "mumbai", "delhi",
+    "noida", "gurgaon", "gurugram", "krakow", "kraków", "warsaw", "wroclaw", "lisbon",
+    "madrid", "barcelona", "munich", "hamburg", "tallinn", "estonia", "riga", "latvia",
+    "vilnius", "lithuania", "montreal", "ottawa", "calgary", "ontario", "quebec",
+    "british columbia", "tel aviv", "cairo", "lagos", "nairobi", "manila", "jakarta",
+    "bangkok", "hanoi", "ho chi minh", "kuala lumpur", "buenos aires", "sao paulo",
+    "são paulo", "bogota", "bogotá", "medellin", "lima", "santiago", "melbourne", "auckland",
 ]
 US_OK = ["us", "usa", "u.s.", "united states", "north america", "americas", "anywhere",
          "worldwide", "global"]
@@ -34,6 +41,10 @@ def title_ok(title, cfg):
 
 def location_ok(job, cfg):
     loc = (job.get("location") or "").lower()
+    # commutable cities: on-site / hybrid is fine there
+    if _has_word(loc, [a.lower() for a in cfg.get("local_areas") or []]) and not (
+            _has_word(loc, NON_US) and not _has_word(loc, US_OK)):
+        return True
     if cfg.get("remote_only", True):
         if not job.get("remote_hint") and "remote" not in loc:
             return False

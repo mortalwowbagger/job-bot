@@ -6,11 +6,14 @@
   python -m jobbot tailor         build packets for high scorers
   python -m jobbot review         list packets waiting for you
   python -m jobbot apply [ID]     open + pre-fill the form (next best job if no ID)
-  python -m jobbot mark ID STATUS [--note ...]   e.g. mark 12 applied / skipped / interview
+  python -m jobbot mark ID STATUS [--note ...]   applied / interview / offer / rejected / withdrawn / skipped
+  python -m jobbot add COMPANY TITLE [--date YYYY-MM-DD --url ... --salary ... --contact ...]
   python -m jobbot status         pipeline counts
   python -m jobbot export         write tracker.csv
+  python -m jobbot refilter       re-apply filters to rejected jobs after editing config.yaml
   python -m jobbot check-boards   test every company slug in config.yaml
   python -m jobbot ping           check API key + model IDs (costs < $0.01)
+  python -m jobbot web            local dashboard at http://localhost:8000
 """
 import argparse
 import json
@@ -58,6 +61,19 @@ def cmd_fetch(con, cfg, args):
                         (why, row["id"]))
     con.commit()
     print(f"New listings: {new}  |  passed title/location filters: {kept}")
+
+
+def cmd_refilter(con, cfg, args):
+    """Re-apply title/location filters to rejected jobs after config.yaml changes."""
+    rows = con.execute("SELECT * FROM jobs WHERE status='filtered_out'").fetchall()
+    moved = 0
+    for r in rows:
+        if filters.passes(dict(r), cfg)[0]:
+            con.execute("UPDATE jobs SET status='new', filter_reason=NULL WHERE id=?", (r["id"],))
+            moved += 1
+    con.commit()
+    print(f"Re-checked {len(rows)} filtered jobs: {moved} now pass (status -> new). "
+          "Postings may have closed since they were fetched.")
 
 
 def cmd_score(con, cfg, args):
@@ -147,27 +163,44 @@ def cmd_apply(con, cfg, args):
     limit = cfg.get("daily_apply_limit", 20)
     if applied_today >= limit:
         sys.exit(f"Already applied to {applied_today} today (daily_apply_limit={limit}).")
-    status = apply.run(dict(row), load_yaml("profile.yaml"), row["packet_dir"])
-    fields = {"status": status}
-    if status == "applied":
-        fields["applied_at"] = db.now()
-    db.update(con, row["id"], **fields)
+    status = apply.run(dict(row), load_yaml("profile.yaml"), row["packet_dir"],
+                       interactive=not getattr(args, "no_prompt", False))
+    if status is None:  # --no-prompt: outcome is recorded later (dashboard or `mark`)
+        print(f"#{row['id']} browser closed; status unchanged")
+        return
+    db.set_status(con, row["id"], status)
     print(f"#{row['id']} -> {status}")
 
 
 def cmd_mark(con, cfg, args):
-    fields = {"status": args.status}
-    if args.status == "applied":
-        fields["applied_at"] = db.now()
-    if args.note:
-        fields["notes"] = args.note
-    db.update(con, args.id, **fields)
+    if not db.get(con, args.id):
+        sys.exit(f"No job #{args.id}.")
+    db.set_status(con, args.id, args.status, note=args.note)
     print(f"#{args.id} -> {args.status}")
+
+
+def cmd_add(con, cfg, args):
+    """Record an application made outside job-bot."""
+    if args.status not in db.APPLICATION_STATUSES:
+        sys.exit(f"--status must be one of {', '.join(db.APPLICATION_STATUSES)}")
+    job_id = db.add_manual(con, args.company, args.title, url=args.url or "",
+                           location=args.location or "", applied_at=args.date,
+                           status=args.status, salary=args.salary, contact=args.contact)
+    if args.note:
+        db.add_event(con, job_id, "note", args.note)
+    print(f"Added #{job_id}: {args.title} at {args.company} ({args.status})")
+
+
+def cmd_web(con, cfg, args):
+    from .web import create_app
+    print(f"job-bot dashboard: http://localhost:{args.port}  (Ctrl+C to stop)")
+    create_app(ROOT).run(host="127.0.0.1", port=args.port, threaded=True)
 
 
 def cmd_status(con, cfg, args):
     c = db.counts(con)
-    order = ["new", "filtered_out", "low_score", "scored", "tailored", "applied", "skipped"]
+    order = ["new", "filtered_out", "low_score", "scored", "tailored", "applied", "interview",
+             "offer", "rejected", "withdrawn", "skipped"]
     for k in order + sorted(set(c) - set(order)):
         if k in c:
             print(f"  {k:14s} {c[k]:5d}")
@@ -203,24 +236,60 @@ def cmd_ping(con, cfg, args):
             print(f"  FAIL  {cfg[key]}  ({key}): {e}")
 
 
+def notify(cfg, title, message):
+    """macOS notification (no-op elsewhere or when notify: false)."""
+    if sys.platform != "darwin" or not cfg.get("notify", True):
+        return
+    import subprocess
+    esc = lambda t: t.replace("\\", "\\\\").replace('"', '\\"')
+    subprocess.run(["osascript", "-e", f'display notification "{esc(message)}" with title "{esc(title)}"'],
+                   capture_output=True, check=False)
+
+
 def cmd_run(con, cfg, args):
+    started = db.now()
+    print("[1/3] Fetching listings", flush=True)
     cmd_fetch(con, cfg, args)
+    print("[2/3] Scoring", flush=True)
     cmd_score(con, cfg, args)
+    print("[3/3] Tailoring", flush=True)
     cmd_tailor(con, cfg, args)
+    new = con.execute("SELECT id, score, company, title FROM jobs WHERE status='tailored' "
+                      "AND updated_at >= ? ORDER BY score DESC", (started,)).fetchall()
+    print(f"\nDone. {len(new)} new prospect(s)" + (":" if new else "."))
+    for r in new:
+        print(f"  {r['score']:3d}  #{r['id']:<5} {r['company'][:20]:20s} {r['title'][:50]}")
+    notify(cfg, "job-bot run finished",
+           f"{len(new)} new prospect(s)" + (f" - best: {new[0]['company']} ({new[0]['score']})" if new else ""))
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="jobbot", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ["run", "fetch", "score", "tailor", "review", "status", "export", "check-boards", "ping"]:
+    for name in ["run", "fetch", "score", "tailor", "review", "status", "export", "check-boards", "ping",
+                 "refilter"]:
         sub.add_parser(name)
     a = sub.add_parser("apply")
     a.add_argument("id", nargs="?", type=int)
+    a.add_argument("--no-prompt", action="store_true",
+                   help="pre-fill, then wait for the browser to close (used by the dashboard)")
+    w = sub.add_parser("web")
+    w.add_argument("--port", type=int, default=8000)
     m = sub.add_parser("mark")
     m.add_argument("id", type=int)
     m.add_argument("status")
     m.add_argument("--note")
+    ad = sub.add_parser("add", help="record an application made outside job-bot")
+    ad.add_argument("company")
+    ad.add_argument("title")
+    ad.add_argument("--url")
+    ad.add_argument("--date", help="date applied, YYYY-MM-DD (default: now)")
+    ad.add_argument("--location")
+    ad.add_argument("--status", default="applied")
+    ad.add_argument("--salary")
+    ad.add_argument("--contact", help="recruiter / hiring manager")
+    ad.add_argument("--note")
     args = ap.parse_args(argv)
 
     load_env()
@@ -230,4 +299,6 @@ def main(argv=None):
     con = db.connect(str(ROOT / "jobs.db"))
     {"run": cmd_run, "fetch": cmd_fetch, "score": cmd_score, "tailor": cmd_tailor,
      "review": cmd_review, "apply": cmd_apply, "mark": cmd_mark, "status": cmd_status,
-     "export": cmd_export, "check-boards": cmd_check, "ping": cmd_ping}[args.cmd](con, cfg, args)
+     "export": cmd_export, "check-boards": cmd_check, "ping": cmd_ping,
+     "refilter": cmd_refilter, "web": cmd_web,
+     "add": cmd_add}[args.cmd](con, cfg, args)

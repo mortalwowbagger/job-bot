@@ -122,7 +122,9 @@ def form_url(job):
     return job["apply_url"] or job["url"]
 
 
-def run(job, profile, packet_dir, user_data_dir=".browser-profile"):
+def run(job, profile, packet_dir, user_data_dir=".browser-profile", interactive=True):
+    """Pre-fill the form and hand over. Returns the new status, or None when
+    interactive=False (waits for the browser window to close instead of asking)."""
     from playwright.sync_api import sync_playwright
 
     d = Path(packet_dir)
@@ -145,6 +147,21 @@ def run(job, profile, packet_dir, user_data_dir=".browser-profile"):
         print(" Answers for custom questions are in answers.md")
         print(" -> Review EVERYTHING in the browser and submit it yourself.")
         print("=" * 64)
+        if not interactive:
+            done = [] if job["source"] == "remotive" else prefill(
+                page, job["source"], profile["contact"], resume, letter, letter_text)
+            print(f" Pre-filled: {', '.join(done) or 'nothing'}", flush=True)
+            print(" Close the browser window when you're done.", flush=True)
+            try:
+                while ctx.pages:
+                    ctx.pages[0].wait_for_timeout(1000)
+            except Exception:  # noqa: BLE001 - window closed mid-wait
+                pass
+            try:
+                ctx.close()
+            except Exception:  # noqa: BLE001
+                pass
+            return None
         while True:
             done = [] if job["source"] == "remotive" else prefill(
                 page, job["source"], profile["contact"], resume, letter, letter_text)

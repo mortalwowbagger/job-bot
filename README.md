@@ -43,7 +43,7 @@ gitignored, so your personal data stays local.
 ## Smoke test
 
 ```bash
-python -m unittest discover -s tests -t . -v     # 17 offline tests, no API key needed
+python -m unittest discover -s tests -t . -v     # 26 offline tests, no API key needed
 python -m jobbot ping                            # checks your API key + model IDs
 python -m jobbot check-boards                    # which company slugs in config.yaml work
 ```
@@ -52,7 +52,33 @@ Remove `BAD` slugs from `config.yaml` and add companies you like. Find a
 company's slug from its careers URL: `job-boards.greenhouse.io/<slug>`,
 `jobs.lever.co/<slug>`, `jobs.ashbyhq.com/<slug>`.
 
-## Daily use
+## Dashboard
+
+```bash
+python -m jobbot web        # then open http://localhost:8000
+```
+
+A local web page (only reachable from your own machine) for everything below:
+prospects with score, reasons, concerns and the "check before submitting" list,
+the resume PDF, copy buttons for the cover letter and screening answers, an
+**Open application** button per job, **Pre-fill in automated browser**, and
+Applied / Interview / Offer / Rejected / Skip buttons with notes. **Run job
+search** shows live progress, and you get a macOS notification when a run ends.
+
+### Tracking applications
+
+Every application gets details (applied date, salary, contact, next step,
+follow-up date, notes) and a timeline: status changes are logged
+automatically and you can add entries like "recruiter screen went well".
+Follow-ups that are due are highlighted. Applications you made outside
+job-bot can be added with **+ Add application**, or from the CLI:
+
+```bash
+python -m jobbot add "Initech" "Senior SDET" --date 2026-09-01 --url https://... --salary "$130K"
+python -m jobbot mark 42 interview --note "Onsite Thu"   # also logged on the timeline
+```
+
+## Daily use (CLI)
 
 ```bash
 python -m jobbot run        # fetch + score + tailor (well under $1/day of API usage)
