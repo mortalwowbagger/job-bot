@@ -10,6 +10,9 @@ fetch (public ATS feeds) -> filter (regex, free) -> score (Haiku) -> tailor (Son
       -> guardrail checks -> PDF packet -> you review -> apply (pre-fill, you submit)
 ```
 
+Use it from the command line or from a local website (`python -m jobbot web`,
+see [Dashboard](#dashboard-local-website)).
+
 The point is fewer, better, truthful applications, not volume. The AI can't
 invent experience: guardrails in code (not just the prompt) keep every resume
 tied to facts you wrote yourself.
@@ -52,13 +55,29 @@ Remove `BAD` slugs from `config.yaml` and add companies you like. Find a
 company's slug from its careers URL: `job-boards.greenhouse.io/<slug>`,
 `jobs.lever.co/<slug>`, `jobs.ashbyhq.com/<slug>`.
 
-## Dashboard
+## Dashboard (local website)
+
+Everything can be done from a local web page instead of the command line.
+
+**Start it** (after the setup above), from a terminal:
 
 ```bash
-python -m jobbot web        # then open http://localhost:8000
+cd job-bot                   # the project folder
+source .venv/bin/activate
+python -m jobbot web
 ```
 
-A local web page (only reachable from your own machine) for everything below:
+Then open **http://localhost:8000** in your browser. Leave that terminal open
+while you use the dashboard; press **Ctrl+C** in it to stop the server.
+
+- Use another port with `python -m jobbot web --port 8080` (then open
+  http://localhost:8080). Do this if you see "Address already in use".
+- The server only listens on your own machine (127.0.0.1); nobody else on
+  your network can open it.
+- Closing the browser tab doesn't stop the server, and stopping the server
+  doesn't lose anything: all data lives in `jobs.db` and `output/`.
+
+The dashboard covers everything below:
 prospects with score, reasons, concerns and the "check before submitting" list,
 the resume PDF, copy buttons for the cover letter and screening answers, an
 **Open application** button per job, **Pre-fill in automated browser**, and

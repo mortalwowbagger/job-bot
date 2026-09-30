@@ -265,6 +265,18 @@ class TestTracking(unittest.TestCase):
         self.assertEqual([e["text"] for e in db.events(con, jid)], ["applied", "interview", "Onsite next week"])
 
 
+class TestRender(unittest.TestCase):
+    def test_file_names_are_unique_per_application(self):
+        from jobbot.render import file_base
+        a = file_base(PROFILE, {"company": "Wikimedia Foundation", "title": "Software Quality Manager"})
+        b = file_base(PROFILE, {"company": "Pinterest", "title": "SDET II, tvScientific / Web Platform (Remote)"})
+        self.assertEqual(a, "Alex_Example_Wikimedia-Foundation_Software-Quality-Manager")
+        self.assertTrue(b.startswith("Alex_Example_Pinterest_SDET-II-tvScientific"))
+        self.assertLessEqual(len(b), 80)
+        self.assertRegex(b, r"^[A-Za-z0-9_-]+$")
+        self.assertIn("_Veeva_", file_base(PROFILE, {"company": "veeva", "title": "QA Engineer"}))
+
+
 class TestWeb(unittest.TestCase):
     def setUp(self):
         from jobbot.web import create_app

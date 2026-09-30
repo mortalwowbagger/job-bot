@@ -24,6 +24,25 @@ def slug(s, n=40):
     return re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")[:n]
 
 
+def file_part(s, n=30):
+    """Filename-safe chunk: 'SDET II, tvScientific' -> 'SDET-II-tvScientific' (case kept)."""
+    s = re.sub(r"[^A-Za-z0-9]+", "-", s or "").strip("-")
+    if len(s) > n:
+        s = s[:n].rsplit("-", 1)[0]
+    return s
+
+
+def file_base(profile, job):
+    """Distinct per application, e.g. Alex_Example_Pinterest_SDET-II-tvScientific.
+    Always followed by _Resume.pdf / _Cover_Letter.pdf, which apply/web look for."""
+    c = profile["contact"]
+    parts = [file_part(c["first_name"]), file_part(c["last_name"]),
+             # Lever/Ashby report the lowercase board slug ("veeva") as the company
+             file_part(job["company"].title() if job["company"].islower() else job["company"], 24),
+             file_part(job["title"])]
+    return "_".join(x for x in parts if x)
+
+
 def resume_html(profile, packet):
     c = profile["contact"]
     e = html.escape
@@ -72,7 +91,7 @@ def write_packet(root, job, profile, packet, score, warnings, browser=None, pdf=
     d = Path(root) / name
     d.mkdir(parents=True, exist_ok=True)
     c = profile["contact"]
-    base = f"{c['first_name']}_{c['last_name']}"
+    base = file_base(profile, job)
 
     rhtml = resume_html(profile, packet)
     (d / "resume.html").write_text(rhtml)
