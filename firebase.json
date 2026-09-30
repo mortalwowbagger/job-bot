@@ -1,0 +1,8 @@
+{
+  "hosting": {
+    "public": "hosting_public",
+    "ignore": ["**/.*"],
+    "rewrites": [{ "source": "**", "run": { "serviceId": "jobbot-web", "region": "us-central1" } }]
+  },
+  "firestore": { "rules": "firestore.rules" }
+}

@@ -1,0 +1,6 @@
+# Extra dependencies for the hosted version (Cloud Run). Local use only needs requirements.txt.
+firebase-admin>=6.5
+google-cloud-run>=0.10
+gunicorn>=22.0
+# must match the browsers in the Docker base image (see Dockerfile)
+playwright==1.63.0

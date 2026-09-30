@@ -65,7 +65,8 @@ def _claude(model, system, user, schema, name):
     except (TypeError, json.JSONDecodeError) as e:
         raise LLMError(f"no structured output in reply (stop_reason={stop}): {e}") from e
     u = data.get("usage", {})
-    out["_usage"] = {"total_tokens": u.get("input_tokens", 0) + u.get("output_tokens", 0)}
+    out["_usage"] = {"total_tokens": u.get("input_tokens", 0) + u.get("output_tokens", 0),
+                     "input_tokens": u.get("input_tokens", 0), "output_tokens": u.get("output_tokens", 0)}
     return out
 
 

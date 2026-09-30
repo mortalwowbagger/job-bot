@@ -1,0 +1,17 @@
+# files never uploaded to Cloud Build (mirrors .dockerignore)
+# never ship personal data or local state in the image
+.env
+profile.yaml
+jobs.db
+*.db
+output/
+tracker.csv
+.browser-profile/
+.venv/
+.git/
+tests/
+hosting_public/
+deploy/
+__pycache__/
+*.pyc
+.claude/

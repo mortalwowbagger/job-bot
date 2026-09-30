@@ -195,3 +195,17 @@ sources:
   remotive:              # remotive.com public remote-jobs API
     enabled: true
     categories: [qa, devops]
+
+# ---------------------------------------------------------------
+# Hosted app (Firebase) only. Search settings (titles, locations,
+# min score) are per user and edited on the Settings screen.
+# ---------------------------------------------------------------
+cloud:
+  signup: open                  # open: anyone with a Google account gets in | approval: you approve on the Users screen
+  monthly_budget_usd: 25        # estimated Claude API spend cap for everyone except you; their runs pause when reached
+  owner_runs_per_day: 10        # manual "Run search" presses per day (the 7am run is extra)
+  friend_limits:                # everyone else: keeps API costs predictable
+    runs_per_day: 2
+    max_score_per_run: 30
+    max_tailor_per_run: 5
+  inactive_days: 14             # the 7am run skips friends who haven't opened the app in this long

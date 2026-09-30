@@ -11,3 +11,5 @@ tracker.csv
 # local
 .DS_Store
 .claude/
+profile.yaml.bak
+.firebase/

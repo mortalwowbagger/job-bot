@@ -21,4 +21,16 @@ def respond(name, user):
             "cover_letter": "Dear Hiring Team,\n\nI'd like to apply...\n\nBest,\nAlex Example",
             "screening_answers": [{"question": "Why this role?", "answer": "Strong overlap."}],
         }
+    if name == "profile_import":
+        return {
+            "contact": {"first_name": "Alex", "last_name": "Example", "email": "alex.example@example.com",
+                        "phone": "(555) 010-0000", "location": "Denver, CO", "linkedin": "", "github": ""},
+            "summary": "QA engineer with 9 years of test automation.",
+            "experience": [{"company": "Northwind Bank", "location": "Denver, CO",
+                            "title": "QA Automation Engineer", "dates": "March 2026 - Present",
+                            "facts": ["Develop Appium tests in Java for iOS and Android.",
+                                      "Led a migration to Kubernetes."]}],  # 2nd bullet isn't in the PDF
+            "skills": ["Appium", "Java", "Kubernetes"],
+            "education": [], "extra_facts": [],
+        }
     raise ValueError(name)
