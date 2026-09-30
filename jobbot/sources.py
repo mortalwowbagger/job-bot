@@ -1,4 +1,11 @@
-"""Fetch job listings from public job-board APIs (no scraping, no login)."""
+"""Fetch job listings from public job-board APIs (no scraping, no login).
+
+Company boards (a fixed list of employers): Greenhouse, Lever, Ashby,
+SmartRecruiters, Workable, Recruitee. Search sources (keyword/feed based, so
+people outside tech get results too): Himalayas and Jobicy remote-job APIs, and
+Remotive. Aggregators ask for credit: jobs keep a link to their page and the UI
+shows "via Himalayas" etc.
+"""
 import html
 import re
 
@@ -87,6 +94,82 @@ def parse_remotive(data):
         )
 
 
+def parse_himalayas(data):
+    for j in data.get("jobs", []):
+        where = ", ".join(j.get("locationRestrictions") or []) or "Worldwide"
+        yield dict(
+            source="himalayas", ext_id=j.get("guid") or j.get("applicationLink"), board="himalayas",
+            company=j.get("companyName", ""), title=j.get("title", ""), location=f"Remote ({where})",
+            remote_hint=True, url=j.get("guid") or j.get("applicationLink", ""),
+            apply_url=j.get("applicationLink") or j.get("guid", ""),
+            description=strip_html(j.get("description") or j.get("excerpt", "")),
+        )
+
+
+def parse_jobicy(data):
+    for j in data.get("jobs", []):
+        yield dict(
+            source="jobicy", ext_id=str(j["id"]), board="jobicy", company=j.get("companyName", ""),
+            title=html.unescape(j.get("jobTitle", "")), location=f"Remote ({j.get('jobGeo') or 'Anywhere'})",
+            remote_hint=True, url=j.get("url", ""), apply_url=j.get("url", ""),
+            description=strip_html(j.get("jobDescription", "")),
+        )
+
+
+def parse_smartrecruiters(slug, data):
+    for j in data.get("content", []):
+        loc = j.get("location") or {}
+        where = ", ".join(x for x in (loc.get("city"), loc.get("region"), (loc.get("country") or "").upper()) if x)
+        remote = bool(loc.get("remote"))
+        url = f"https://jobs.smartrecruiters.com/{slug}/{j['id']}"
+        yield dict(
+            source="smartrecruiters", ext_id=str(j["id"]), board=slug,
+            company=(j.get("company") or {}).get("name") or slug, title=j.get("name", ""),
+            location=("Remote - " if remote else "") + where, remote_hint=remote,
+            url=url, apply_url=url, description="", detail_url=j.get("ref", ""),
+        )
+
+
+def parse_workable(slug, data):
+    company = data.get("name") or slug
+    for j in data.get("jobs", []):
+        where = ", ".join(x for x in (j.get("city"), j.get("state"), j.get("country")) if x)
+        remote = str(j.get("telecommuting")).lower() == "true"
+        yield dict(
+            source="workable", ext_id=j.get("shortcode") or j.get("url"), board=slug, company=company,
+            title=j.get("title", ""), location=("Remote - " if remote else "") + where, remote_hint=remote,
+            url=j.get("url", ""), apply_url=j.get("application_url") or j.get("url", ""),
+            description=strip_html(j.get("description", "")),
+        )
+
+
+def parse_recruitee(slug, data):
+    for j in data.get("offers", []):
+        remote = bool(j.get("remote"))
+        loc = j.get("location") or ", ".join(x for x in (j.get("city"), j.get("country")) if x)
+        if remote and "remote" not in loc.lower():
+            loc = f"Remote - {loc}" if loc else "Remote"
+        yield dict(
+            source="recruitee", ext_id=str(j["id"]), board=slug, company=j.get("company_name") or slug,
+            title=j.get("title", ""), location=loc, remote_hint=remote,
+            url=j.get("careers_url", ""), apply_url=j.get("careers_apply_url") or j.get("careers_url", ""),
+            description=strip_html((j.get("description") or "") + "\n" + (j.get("requirements") or "")),
+        )
+
+
+def fill_description(job):
+    """Some list APIs (SmartRecruiters) omit descriptions; fetch it for jobs we keep."""
+    if job.get("description") or not job.get("detail_url"):
+        return job
+    d = _get(job["detail_url"])
+    secs = ((d.get("jobAd") or {}).get("sections") or {})
+    parts = [strip_html((secs.get(k) or {}).get("text", "")) for k in
+             ("jobDescription", "qualifications", "additionalInformation", "companyDescription")]
+    job["description"] = "\n\n".join(x for x in parts if x)
+    job["apply_url"] = d.get("applyUrl") or job.get("apply_url")
+    return job
+
+
 # --- fetchers ---
 
 def fetch_greenhouse(slug):
@@ -105,20 +188,87 @@ def fetch_remotive(category):
     return parse_remotive(_get("https://remotive.com/api/remote-jobs", category=category))
 
 
-def iter_all(cfg, log=print):
-    """Yield every job from every configured source; log (don't crash on) bad slugs."""
+def fetch_smartrecruiters(slug, country="us", cap=500):
+    jobs, offset = [], 0
+    while offset < cap:
+        data = _get(f"https://api.smartrecruiters.com/v1/companies/{slug}/postings",
+                    limit=100, offset=offset, country=country)
+        jobs += list(parse_smartrecruiters(slug, data))
+        offset += 100
+        if offset >= data.get("totalFound", 0):
+            break
+    return jobs
+
+
+def fetch_workable(slug):
+    return parse_workable(slug, _get(f"https://apply.workable.com/api/v1/widget/accounts/{slug}", details="true"))
+
+
+def fetch_recruitee(slug):
+    return parse_recruitee(slug, _get(f"https://{slug}.recruitee.com/api/offers/"))
+
+
+def fetch_himalayas(query, country="US", pages=2):
+    jobs = []
+    for page in range(1, pages + 1):
+        data = _get("https://himalayas.app/jobs/api/search", q=query, country=country, sort="recent", page=page)
+        batch = list(parse_himalayas(data))
+        jobs += batch
+        if len(batch) < 20:
+            break
+    return jobs
+
+
+def fetch_jobicy(geo="usa"):
+    """The 200 newest remote jobs for a region (one request; Jobicy asks for <= 1 automated check/hour)."""
+    return parse_jobicy(_get("https://jobicy.com/api/v2/remote-jobs", count=200, geo=geo))
+
+
+FETCHERS = {"greenhouse": fetch_greenhouse, "lever": fetch_lever, "ashby": fetch_ashby,
+            "smartrecruiters": fetch_smartrecruiters, "workable": fetch_workable,
+            "recruitee": fetch_recruitee, "remotive": fetch_remotive, "himalayas": fetch_himalayas,
+            "jobicy": fetch_jobicy}
+BOARD_KINDS = ["greenhouse", "lever", "ashby", "smartrecruiters", "workable", "recruitee"]
+
+
+def plan_for(cfg, extra=()):
+    """(kind, arg) pairs to fetch: config boards + search sources + extras (e.g. users' companies)."""
     src = cfg.get("sources", {})
-    plan = [(fetch_greenhouse, s) for s in src.get("greenhouse", []) or []]
-    plan += [(fetch_lever, s) for s in src.get("lever", []) or []]
-    plan += [(fetch_ashby, s) for s in src.get("ashby", []) or []]
+    plan = [(k, slug) for k in BOARD_KINDS for slug in (src.get(k) or [])]
     rem = src.get("remotive") or {}
     if rem.get("enabled"):
-        plan += [(fetch_remotive, c) for c in rem.get("categories", [])]
-    for i, (fn, arg) in enumerate(plan, 1):
-        name = f"({i}/{len(plan)}) {fn.__name__.replace('fetch_', '')}:{arg}"
+        plan += [("remotive", c) for c in rem.get("categories", [])]
+    search = cfg.get("search") or {}
+    if search.get("jobicy"):
+        plan.append(("jobicy", "usa"))
+    if search.get("himalayas"):
+        plan += [("himalayas", q) for q in search.get("keywords") or []]
+    seen, out = set(), []
+    for item in list(plan) + list(extra):
+        key = (item[0], str(item[1]).lower())
+        if key not in seen and item[0] in FETCHERS:
+            seen.add(key)
+            out.append(item)
+    return out
+
+
+def iter_all(cfg, log=print, extra=(), workers=8):
+    """Yield every job from every source (fetched in parallel); log, don't crash on, bad ones."""
+    from concurrent.futures import ThreadPoolExecutor
+    plan = plan_for(cfg, extra)
+
+    def one(item):
+        kind, arg = item
         try:
-            jobs = list(fn(arg))
-            log(f"  {name:40s} {len(jobs):4d} jobs")
-            yield from jobs
+            return item, list(FETCHERS[kind](arg)), None
         except Exception as e:  # noqa: BLE001 - one bad board shouldn't stop the run
-            log(f"  {name:40s} FAILED ({type(e).__name__}: {str(e)[:80]})")
+            return item, [], e
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for i, ((kind, arg), jobs, err) in enumerate(pool.map(one, plan), 1):
+            name = f"({i}/{len(plan)}) {kind}:{arg}"
+            if err:
+                log(f"  {name:40s} FAILED ({type(err).__name__}: {str(err)[:80]})")
+            else:
+                log(f"  {name:40s} {len(jobs):4d} jobs")
+                yield from jobs

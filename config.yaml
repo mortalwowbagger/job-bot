@@ -10,7 +10,8 @@ model_write: claude-sonnet-5-5           # better writer, used for resume + cove
 # For Grok instead:  provider: grok, model_score/model_write: grok-4.7
 
 min_score: 70              # only tailor jobs scoring at or above this
-max_score_per_run: 60      # cap LLM scoring calls per run (cost control)
+max_score_per_run: 150     # cap LLM scoring calls per run; best matches (free pre-ranking) go first,
+                           # the rest wait for the next run (~$0.004 per job with Haiku)
 max_tailor_per_run: 15     # cap tailored application packets per run
 daily_apply_limit: 20      # `apply` refuses to open more than this per day
 
@@ -145,6 +146,28 @@ sources:
     - expel
     - neo4j
     - zoominfo
+    # added 2026-09-30: outside tech, so non-QA users get results too
+    - oscar
+    - hellofresh
+    - sweetgreen
+    - everlane
+    - aclu
+    - talkspace
+    - glossier
+    - codeorg
+    - peloton
+    - buzzfeed
+  smartrecruiters:     # jobs.smartrecruiters.com/<CompanyId> (US postings only, first 500)
+    - Equinox
+    - Abbvie
+    - ServiceNow
+    - BoschGroup
+    - Primark
+    - LinkedIn3
+    - Canva
+    - Wix2
+  workable: []         # apply.workable.com/<slug>
+  recruitee: []        # <slug>.recruitee.com
   lever:
     - palantir
     - spotify
@@ -196,6 +219,13 @@ sources:
     enabled: true
     categories: [qa, devops]
 
+# Keyword/feed search sources (broad: any industry). Hosted app: each user's job
+# titles become Himalayas searches automatically. Local CLI: `keywords` below.
+search:
+  himalayas: true        # himalayas.app remote jobs, one search per keyword (credit: "via Himalayas")
+  jobicy: true           # jobicy.com: the 200 newest US remote jobs, one request per run
+  keywords: [qa engineer, sdet, test automation, quality assurance, devops engineer]
+
 # ---------------------------------------------------------------
 # Hosted app (Firebase) only. Search settings (titles, locations,
 # min score) are per user and edited on the Settings screen.
@@ -206,6 +236,8 @@ cloud:
   owner_runs_per_day: 10        # manual "Run search" presses per day (the 7am run is extra)
   friend_limits:                # everyone else: keeps API costs predictable
     runs_per_day: 2
-    max_score_per_run: 30
+    max_score_per_run: 80
     max_tailor_per_run: 5
   inactive_days: 14             # the 7am run skips friends who haven't opened the app in this long
+  first_run_multiplier: 2       # a new user's first run scores/tailors this many times more (clears the backlog)
+  expire_unscored_days: 14      # queued jobs still unscored after this long are dropped (postings go stale)

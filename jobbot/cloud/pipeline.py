@@ -9,6 +9,7 @@ written to users/{uid}/runs/latest so the dashboard can show it.
 """
 import argparse
 import os
+import re
 import sys
 import tempfile
 import time
@@ -19,7 +20,7 @@ import yaml
 
 from datetime import datetime, timedelta
 
-from .. import filters, llm, settings, sources
+from .. import filters, llm, rank, settings, sources
 from ..llm import FatalLLMError
 from .store import JOB_FIELDS, job_id, now
 
@@ -43,10 +44,26 @@ class Cost:
             self.usd += (usage.get("input_tokens", 0) * pin + usage.get("output_tokens", 0) * pout) / 1e6
 
 
+def user_settings(user):
+    return user.get("settings") or (settings.OWNER_DEFAULTS if user.get("is_admin") else {})
+
+
+def extra_fetches(users, cfg, max_queries=60):
+    """Per-user additions to the shared fetch: their companies + their job titles as searches."""
+    extra, queries = [], []
+    for _, d in users:
+        s = user_settings(d)
+        for c in s.get("companies") or []:
+            kind, _, slug = c.partition(":")
+            extra.append((kind, slug))
+        if (cfg.get("search") or {}).get("himalayas", True):
+            queries += [q for q in settings.search_queries(s) if q.lower() not in (x.lower() for x in queries)]
+    return extra + [("himalayas", q) for q in queries[:max_queries]]
+
+
 def user_cfg(cfg, user):
     """config.yaml + this user's search settings + (for non-owners) the friend limits."""
-    s = user.get("settings") or (settings.OWNER_DEFAULTS if user.get("is_admin") else {})
-    ucfg = settings.to_cfg(cfg, s)
+    ucfg = settings.to_cfg(cfg, user_settings(user))
     if not user.get("is_admin"):
         lim = (cfg.get("cloud") or {}).get("friend_limits") or {}
         for k in ("max_score_per_run", "max_tailor_per_run"):
@@ -130,7 +147,8 @@ def run(store, cfg, uids=None, browser_factory=None):
     for p in progs.values():
         p.step("[1/3] Fetching listings")
     try:
-        jobs = list(sources.iter_all(cfg, log=broadcast))
+        base = {**cfg, "search": {**(cfg.get("search") or {}), "keywords": []}}  # users' titles drive searches
+        jobs = list(sources.iter_all(base, log=broadcast, extra=extra_fetches(users, cfg)))
     except Exception as e:  # noqa: BLE001
         broadcast(f"Fetching failed: {e}", force=True)
         for p in progs.values():
@@ -180,15 +198,36 @@ def run_user(store, cfg, uid, profile, passing, browser, prog, cost=None):
 
     cost = cost or Cost()
     started = now()
-    by_id = {job_id(j): j for j in passing}
+    cloud = cfg.get("cloud") or {}
+    by_id, seen = {}, set()
+    for j in passing:  # the same posting can come from a company board and a search source
+        key = (j["company"].strip().lower(), re.sub(r"\W+", " ", j["title"].lower()).strip())
+        if key not in seen:
+            seen.add(key)
+            by_id[job_id(j)] = j
     new_ids = sorted(set(by_id) - store.existing_ids(uid, list(by_id)))
     for jid in new_ids:
         j = by_id[jid]
+        try:
+            sources.fill_description(j)
+        except Exception as e:  # noqa: BLE001 - keep the job, score from title if needed
+            prog.log(f"  (no description for {j['company']}: {type(e).__name__})")
         store.put_job(uid, jid, {**{k: j.get(k) for k in JOB_FIELDS}, "status": "new"})
     prog.log(f"New for you: {len(new_ids)}", force=True)
 
+    # stale queue: postings still unscored after N days are probably filled
+    cutoff = (datetime.now() - timedelta(days=cloud.get("expire_unscored_days", 14))).isoformat()
+    queued = store.jobs(uid, ["new"])
+    for r in [r for r in queued if (r.get("created_at") or "") < cutoff]:
+        store.update_job(uid, r["id"], status="expired")
+    queued = [r for r in queued if (r.get("created_at") or "") >= cutoff]
+
+    first = not store.jobs(uid, ["scored", "low_score", "tailored", "applied", "skipped", "expired"])
+    mult = cloud.get("first_run_multiplier", 2) if first else 1
     prog.step("[2/3] Scoring")
-    rows = store.jobs(uid, ["new"])[: cfg.get("max_score_per_run", 60)]
+    rows = rank.order(queued, profile)[: cfg.get("max_score_per_run", 60) * mult]
+    if len(queued) > len(rows):
+        prog.log(f"{len(queued) - len(rows)} lower-ranked jobs wait for the next run")
     prog.log(f"Scoring {len(rows)} jobs with {cfg['model_score']}...")
     for r in rows:
         try:
@@ -205,7 +244,7 @@ def run_user(store, cfg, uid, profile, passing, browser, prog, cost=None):
 
     prog.step("[3/3] Tailoring")
     rows = sorted(store.jobs(uid, ["scored"]), key=lambda r: -(r.get("score") or 0))
-    rows = rows[: cfg.get("max_tailor_per_run", 15)]
+    rows = rows[: cfg.get("max_tailor_per_run", 15) * mult]
     prog.log(f"Tailoring {len(rows)} packets with {cfg['model_write']}...")
     with tempfile.TemporaryDirectory() as tmp:
         for r in rows:

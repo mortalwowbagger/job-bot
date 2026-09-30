@@ -56,8 +56,8 @@ HARD RULES - violating any of these is a failure:
    Mention the company by name and 1-2 concrete things from the posting.
    Sign as the candidate's full name. No cliches ("I am thrilled", "passionate").
 7. `screening_answers`: short, truthful answers (<=80 words) for: "Why are you
-   interested in this role?", "Describe your most relevant test automation
-   experience.", and up to 2 more questions this posting is likely to ask.
+   interested in this role?", "Describe your most relevant experience for this
+   role.", and up to 2 more questions this posting is likely to ask.
    NEVER answer work authorization, sponsorship, salary, EEO/demographic or
    legal questions - skip them entirely."""
 

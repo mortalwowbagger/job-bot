@@ -1,12 +1,13 @@
 # job-bot
 
-A semi-automated job-search assistant for QA / SDET / DevOps roles. It pulls
-listings from public job-board APIs, scores each one against your background
-with Claude, writes a tailored resume and cover letter for the good matches,
-and pre-fills the application form. **You** review everything and click submit.
+A semi-automated job-search assistant. It pulls listings from public job-board
+APIs, scores each one against your background with Claude, writes a tailored
+resume and cover letter for the good matches, and helps you track applications.
+**You** review everything and click submit. Built for QA / SDET / DevOps roles
+first; per-user job titles, locations and companies make it work for any field.
 
 ```
-fetch (public ATS feeds) -> filter (regex, free) -> score (Haiku) -> tailor (Sonnet)
+fetch (public job APIs) -> filter (free) -> rank (free) -> score (Haiku) -> tailor (Sonnet)
       -> guardrail checks -> PDF packet -> you review -> apply (pre-fill, you submit)
 ```
 
@@ -135,6 +136,20 @@ python -m jobbot mark 42 interview --note "recruiter call Tue"
 python -m jobbot status                      # pipeline counts
 python -m jobbot export                      # tracker.csv for Numbers/Sheets
 ```
+
+## Job sources
+
+All public APIs, no scraping or logins:
+
+| kind | sources |
+|---|---|
+| company boards (listed in `config.yaml`) | Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Recruitee |
+| keyword / feed search (any field) | [Himalayas](https://himalayas.app) remote jobs (one search per job title), [Jobicy](https://jobicy.com) (newest US remote jobs), Remotive |
+
+Aggregator listings keep their original link and are labeled "via Himalayas" /
+"via Jobicy", as their terms ask. Before any paid scoring, queued jobs are
+ranked for free against your profile, so the best matches are scored first and
+the per-run cap (`max_score_per_run`) only defers the least relevant ones.
 
 ## Guardrails (enforced in code, not just the prompt)
 

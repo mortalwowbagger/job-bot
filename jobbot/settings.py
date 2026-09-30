@@ -6,7 +6,41 @@ to_cfg() turns them into the title_include/title_exclude patterns filters.py use
 """
 import re
 
-LIMITS = {"include": 60, "exclude": 150, "local": 20, "len": 60}
+LIMITS = {"include": 60, "exclude": 150, "local": 20, "len": 60, "companies": 30}
+
+# careers-page URL (or "kind:slug") -> (kind, slug)
+BOARD_URLS = [
+    ("greenhouse", r"(?:job-boards|boards)(?:\.eu)?\.greenhouse\.io/(?:embed/job_board\?for=)?([A-Za-z0-9_-]+)"),
+    ("lever", r"jobs\.(?:eu\.)?lever\.co/([A-Za-z0-9_.-]+)"),
+    ("ashby", r"jobs\.ashbyhq\.com/([A-Za-z0-9_.%-]+)"),
+    ("smartrecruiters", r"(?:jobs|careers)\.smartrecruiters\.com/([A-Za-z0-9_-]+)"),
+    ("workable", r"apply\.workable\.com/([A-Za-z0-9_-]+)"),
+    ("recruitee", r"([A-Za-z0-9_-]+)\.recruitee\.com"),
+]
+KINDS = [k for k, _ in BOARD_URLS]
+
+
+def parse_company(text):
+    """'https://jobs.lever.co/acme/123' -> ('lever', 'acme'); 'greenhouse:acme' also works."""
+    t = text.strip()
+    m = re.match(rf"^({'|'.join(KINDS)})\s*:\s*([A-Za-z0-9_.-]+)$", t, re.I)
+    if m:
+        return m.group(1).lower(), m.group(2)
+    for kind, pat in BOARD_URLS:
+        m = re.search(pat, t)
+        if m and m.group(1).lower() not in ("jobs", "embed", "www", "api"):
+            return kind, m.group(1)
+    return None
+
+
+def search_queries(s):
+    """Job-title phrases usable as keyword searches (no wildcards, not too short)."""
+    out = []
+    for p in (s or {}).get("title_keywords") or []:
+        q = p.rstrip("*").strip()
+        if len(q) >= 3 and q.lower() not in (x.lower() for x in out):
+            out.append(q)
+    return out[:8]
 
 # Equivalent to the owner's original config.yaml filters (see tests).
 OWNER_DEFAULTS = {
@@ -26,9 +60,11 @@ OWNER_DEFAULTS = {
     "us_only": True,
     "local_areas": ["austin", "round rock", "cedar park", "pflugerville", "kyle", "san marcos"],
     "min_score": 70,
+    "companies": [],
 }
 
 NEW_USER_DEFAULTS = {
+    "companies": [],
     "title_keywords": [],
     "exclude_keywords": ["intern", "internship", "new grad", "student"],
     "remote_only": True,
@@ -72,6 +108,24 @@ def clean(body):
     lines("title_keywords", LIMITS["include"], "Job titles")
     lines("exclude_keywords", LIMITS["exclude"], "Skip titles")
     lines("local_areas", LIMITS["local"], "Cities")
+    companies, bad = [], []
+    raw = body.get("companies", [])
+    for line in (raw.splitlines() if isinstance(raw, str) else raw):
+        line = str(line).strip()
+        if not line:
+            continue
+        hit = parse_company(line)
+        if hit:
+            if f"{hit[0]}:{hit[1]}".lower() not in (c.lower() for c in companies):
+                companies.append(f"{hit[0]}:{hit[1]}")
+        else:
+            bad.append(line[:60])
+    if bad:
+        errors.append("Companies: couldn't recognize " + ", ".join(repr(b) for b in bad[:3]) +
+                      ". Paste a careers link from Greenhouse, Lever, Ashby, SmartRecruiters, Workable or Recruitee.")
+    if len(companies) > LIMITS["companies"]:
+        errors.append(f"Companies: at most {LIMITS['companies']}")
+    out["companies"] = companies[:LIMITS["companies"]]
     if not out["title_keywords"]:
         errors.append("Job titles: add at least one (e.g. qa engineer, sdet)")
     for k in ("remote_only", "us_only"):

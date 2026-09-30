@@ -48,12 +48,17 @@ def cmd_fetch(con, cfg, args):
     print("Fetching listings...")
     new = kept = 0
     for job in sources.iter_all(cfg):
+        ok, why = filters.passes(job, cfg)
+        if ok and not db.exists(con, job):
+            try:
+                sources.fill_description(job)  # SmartRecruiters lists omit descriptions
+            except Exception:  # noqa: BLE001
+                pass
         if not db.upsert(con, job):
             continue
         new += 1
         row = con.execute("SELECT id FROM jobs WHERE source=? AND ext_id=?",
                           (job["source"], job["ext_id"])).fetchone()
-        ok, why = filters.passes(job, cfg)
         if ok:
             kept += 1
         else:
@@ -78,8 +83,10 @@ def cmd_refilter(con, cfg, args):
 
 def cmd_score(con, cfg, args):
     from .score import score_job
+    from .rank import order
     profile = load_yaml("profile.yaml")
-    rows = db.by_status(con, "new", limit=cfg.get("max_score_per_run", 60))
+    queued = [dict(r) for r in db.by_status(con, "new")]
+    rows = order(queued, profile)[: cfg.get("max_score_per_run", 60)]  # best matches first
     if not rows:
         print("Nothing new to score.")
         return

@@ -182,6 +182,10 @@ body.is-hosted .hosted{display:inline-flex} body.is-admin .admin{display:inline-
     <label class="wide">Also include on-site / hybrid jobs in these cities (one per line)<textarea name="local_areas" rows="3"
       placeholder="austin&#10;round rock"></textarea></label>
     <label>Minimum match score (0-100)<input type="number" name="min_score" min="0" max="100"></label>
+    <label class="wide">Companies to watch (optional, one careers link per line)<textarea name="companies" rows="3"
+      placeholder="https://jobs.lever.co/acme&#10;https://job-boards.greenhouse.io/example"></textarea>
+      <span>Greenhouse, Lever, Ashby, SmartRecruiters, Workable or Recruitee careers pages. Your job titles are also
+      searched on Himalayas and Jobicy, which cover remote jobs in every field.</span></label>
   </div>
   <p class="meta" id="seterr" style="color:var(--bad)"></p>
   <div class="marks"><button class="primary" type="submit">Save settings</button>
@@ -239,6 +243,8 @@ let view="review", sel=null, cur=null, wasRunning=false, wasApplying=false, getT
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const scls=s=>s>=85?"s85":s>=70?"s70":"slow";
+const VIA={himalayas:"via Himalayas",jobicy:"via Jobicy",remotive:"via Remotive",muse:"via The Muse"};
+const srcLabel=s=>VIA[s]||s;
 const today=()=>new Date().toLocaleDateString("en-CA");
 const ago=d=>{if(!d)return"";const n=Math.round((new Date(today())-new Date(d.slice(0,10)))/864e5);return n<=0?"today":n==1?"1d ago":n+"d ago"};
 const fmt=d=>d?new Date(d.slice(0,10)+"T12:00").toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}):"";
@@ -266,7 +272,7 @@ async function loadList(){
   if(!jobs.length){$("list").innerHTML=`<div class="empty">${view=="review"?"No packets waiting. Run a job search.":"Nothing here yet."}</div>`;return}
   $("list").innerHTML=jobs.map(j=>`<div class="row ${j.id==sel?"sel":""}" data-id="${esc(j.id)}">
     <div class="score ${scls(j.score)}">${j.score??"–"}</div>
-    <div><div class="co">${esc(j.company)}<span class="tag">${esc(j.source)}</span>${j.warnings?`<span class="tag w">${j.warnings} to check</span>`:""}${view!="review"?`<span class="tag">${esc(j.status)}</span>`:""}</div>
+    <div><div class="co">${esc(j.company)}<span class="tag">${esc(srcLabel(j.source))}</span>${j.warnings?`<span class="tag w">${j.warnings} to check</span>`:""}${view!="review"?`<span class="tag">${esc(j.status)}</span>`:""}</div>
     <div class="ti">${esc(j.title)}</div><div class="meta">${CFG.hosted?"":"#"+esc(j.id)+" · "}${esc(j.location)}${j.applied_at?` · applied ${fmt(j.applied_at)} (${ago(j.applied_at)})`:""}</div>
     ${j.next_step?`<div class="meta">Next: ${esc(j.next_step)}</div>`:""}
     ${j.follow_up&&["applied","interview","offer"].includes(j.status)?`<div class="meta ${j.follow_up<=today()?"due":""}">Follow up ${fmt(j.follow_up)}${j.follow_up<=today()?" — due":""}</div>`:""}
@@ -284,7 +290,7 @@ async function openJob(id){
   <button class="back" onclick="back()">← Back</button>
   <div class="dh"><div class="score ${scls(j.score)}">${j.score??"–"}</div>
     <div><h2>${esc(j.title)}</h2><div>${esc(j.company)}${j.location?" · "+esc(j.location):""}</div>
-    <div class="meta">${CFG.hosted?"":"#"+esc(j.id)+" · "}${esc(j.source)} · status: <b>${esc(j.status)}</b>${j.applied_at?` · applied ${fmt(j.applied_at)} (${ago(j.applied_at)})`:""}</div></div></div>
+    <div class="meta">${CFG.hosted?"":"#"+esc(j.id)+" · "}${esc(srcLabel(j.source))} · status: <b>${esc(j.status)}</b>${j.applied_at?` · applied ${fmt(j.applied_at)} (${ago(j.applied_at)})`:""}</div></div></div>
   <div class="actions">${appLink(j)}
     ${j.url&&j.url!=j.form_url?`<a class="btn" href="${esc(j.url)}" target="_blank" rel="noopener">Job posting ↗</a>`:""}
     ${j.has_packet&&!CFG.hosted?`<button onclick="prefill()">Pre-fill in automated browser</button>`:""}
@@ -347,12 +353,13 @@ const lines=v=>(v||[]).join("\n");
 async function openSettings(){const r=await api("/api/settings"),s=r.settings,f=$("setform");
   f.title_keywords.value=lines(s.title_keywords);f.exclude_keywords.value=lines(s.exclude_keywords);
   f.local_areas.value=lines(s.local_areas);f.remote_only.checked=!!s.remote_only;f.us_only.checked=!!s.us_only;
-  f.min_score.value=s.min_score;$("seterr").textContent="";$("setsaved").textContent="";$("delmsg").textContent="";$("delconfirm").value="";
+  f.min_score.value=s.min_score;f.companies.value=lines(s.companies);$("seterr").textContent="";$("setsaved").textContent="";$("delmsg").textContent="";$("delconfirm").value="";
   const L=r.limits;$("usage").textContent=`Runs today: ${L.runs_today} of ${L.runs_per_day} · this month's estimated API cost: $${L.month_cost.toFixed(2)}`+(r.saved?"":" · not saved yet");
   $("setmodal").showModal()}
 async function saveSettings(ev){ev.preventDefault();const f=$("setform");$("seterr").textContent="";$("setsaved").textContent="";
   try{await post("/api/settings",{title_keywords:f.title_keywords.value,exclude_keywords:f.exclude_keywords.value,
-    local_areas:f.local_areas.value,remote_only:f.remote_only.checked,us_only:f.us_only.checked,min_score:f.min_score.value});
+    local_areas:f.local_areas.value,remote_only:f.remote_only.checked,us_only:f.us_only.checked,min_score:f.min_score.value,
+    companies:f.companies.value});
     $("setsaved").textContent="Saved. The next run uses these.";if(onboarding)$("setmodal").close();poll()}catch(e){$("seterr").textContent=e.message}}
 async function deleteMe(){try{await post("/api/me/delete",{confirm:$("delconfirm").value.trim()});$("delmsg").textContent="Deleted.";
   setTimeout(signOut,1200)}catch(e){$("delmsg").textContent=e.message}}

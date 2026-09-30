@@ -114,6 +114,11 @@ def upsert(con, job):
     return cur.rowcount == 1
 
 
+def exists(con, job):
+    return con.execute("SELECT 1 FROM jobs WHERE source=? AND ext_id=?",
+                       (job["source"], job["ext_id"])).fetchone() is not None
+
+
 def update(con, job_id, **fields):
     if "score_json" in fields and not isinstance(fields["score_json"], str):
         fields["score_json"] = json.dumps(fields["score_json"])

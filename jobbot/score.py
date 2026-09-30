@@ -16,10 +16,10 @@ SCHEMA = {
     },
 }
 
-SYSTEM = """You are a blunt technical recruiter screening jobs for ONE candidate.
+SYSTEM = """You are a blunt, experienced recruiter screening jobs for ONE candidate (any field).
 Score 0-100 how strong a match the job is, using these weights:
 - Role fit vs candidate target roles ........ 30
-- Tech stack overlap (tools, languages) ..... 25
+- Skills / tools / domain overlap ........... 25
 - Seniority / years-of-experience fit ....... 15
 - Location fit vs candidate targets ......... 15
 - Domain / company fit vs preferences ....... 10
@@ -40,7 +40,7 @@ def score_job(job, profile, model):
     user = (
         "CANDIDATE PROFILE (YAML):\n" + yaml.safe_dump(prof, sort_keys=False)
         + f"\n\nJOB: {job['title']} at {job['company']}\nLocation: {job['location']}\n\n"
-        + (job["description"] or "")[:14000]
+        + (job["description"] or "")[:8000]  # requirements are near the top; keeps scoring cheap
     )
     out = chat_json(model, SYSTEM, user, SCHEMA, name="job_score")
     out["score"] = max(0, min(100, int(out.get("score", 0))))

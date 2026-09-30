@@ -46,7 +46,7 @@ def fake_chromium():
 class TestPipeline(unittest.TestCase):
     def run_once(self, store, uids=None):
         with mock.patch.dict(os.environ, {"JOBBOT_FAKE_LLM": "1"}), \
-             mock.patch.object(sources, "iter_all", lambda c, log=print: iter(fake_jobs())):
+             mock.patch.object(sources, "iter_all", lambda c, log=print, **kw: iter(fake_jobs())):
             pipeline.run(store, CFG, uids=uids, browser_factory=fake_chromium)
 
     def owner(self, store, uid="u1", **extra):
