@@ -136,7 +136,7 @@ function openSite(settings) { chrome.tabs.create({ url: api + (settings ? "/?set
       for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
     if (me.extension_version && newer(me.extension_version, mine)) {
       $("update").hidden = false; $("newver").textContent = "v" + me.extension_version;
-      $("getupdate").onclick = () => chrome.tabs.create({ url: api + "/job-bot-extension.zip" });
+      $("getupdate").onclick = () => chrome.tabs.create({ url: api + "/job-bot-extension.zip?v=" + me.extension_version });
     }
     show("main");
     if (!jobs.length) { $("jobmeta").textContent = "No prospects yet. Run a search in job-bot."; $("fill").disabled = true; return; }

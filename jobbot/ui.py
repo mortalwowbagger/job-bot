@@ -197,7 +197,7 @@ body.is-hosted .hosted{display:inline-flex} body.is-admin .admin{display:inline-
   <p class="meta">Fills applications in your own Chrome: contact details, resume and cover letter. Works on
     Greenhouse, Lever, Ashby and most other forms, including jobs found via Himalayas and other job sites.
     It never submits; you review and submit yourself.</p>
-  <div id="extinstall"><a class="btn primary" href="/job-bot-extension.zip" download>Download extension (.zip)</a>
+  <div id="extinstall"><a class="btn primary" id="extdl" href="/job-bot-extension.zip" download>Download extension (.zip)</a>
     <ol class="meta">
     <li>Unzip the download.</li>
     <li>In Chrome open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top right).</li>
@@ -371,7 +371,7 @@ async function openSettings(){const r=await api("/api/settings"),s=r.settings,f=
   f.local_areas.value=lines(s.local_areas);f.remote_only.checked=!!s.remote_only;f.us_only.checked=!!s.us_only;
   f.min_score.value=s.min_score;f.companies.value=lines(s.companies);cityHint();$("seterr").textContent="";$("setsaved").textContent="";$("delmsg").textContent="";$("delconfirm").value="";
   const L=r.limits;$("usage").textContent=`Runs today: ${L.runs_today} of ${L.runs_per_day} · this month's estimated API cost: $${L.month_cost.toFixed(2)}`+(r.saved?"":" · not saved yet");
-  $("setmodal").showModal();pingExt()}
+  $("extdl").href="/job-bot-extension.zip?v="+Date.now();$("setmodal").showModal();pingExt()}
 let ext={present:false,connected:false};
 window.addEventListener("message",e=>{if(e.source!==window||e.origin!==location.origin)return;const d=e.data||{};
   if(d.source!=="jobbot-ext")return;ext.present=true;

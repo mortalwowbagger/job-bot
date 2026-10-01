@@ -1,8 +1,31 @@
 {
   "hosting": {
     "public": "hosting_public",
-    "ignore": ["**/.*"],
-    "rewrites": [{ "source": "**", "run": { "serviceId": "jobbot-web", "region": "us-central1" } }]
+    "ignore": [
+      "**/.*"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "run": {
+          "serviceId": "jobbot-web",
+          "region": "us-central1"
+        }
+      }
+    ],
+    "headers": [
+      {
+        "source": "/job-bot-extension.zip",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      }
+    ]
   },
-  "firestore": { "rules": "firestore.rules" }
+  "firestore": {
+    "rules": "firestore.rules"
+  }
 }
