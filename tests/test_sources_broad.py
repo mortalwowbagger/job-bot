@@ -78,6 +78,36 @@ class TestNewSources(unittest.TestCase):
         self.assertTrue(any("FAILED" in l for l in logs))
 
 
+MUSE = {"page_count": 1, "results": [{"id": 11, "name": "HR Generalist", "company": {"name": "Zeta"},
+        "locations": [{"name": "Flexible / Remote"}], "refs": {"landing_page": "https://www.themuse.com/jobs/zeta/hr"},
+        "contents": "<p>People ops</p>"}]}
+ADZUNA = {"results": [{"id": "5", "title": "<strong>Marketing</strong> Manager", "company": {"display_name": "Eta"},
+          "location": {"display_name": "Austin, Travis County"}, "redirect_url": "https://www.adzuna.com/land/ad/5",
+          "description": "Lead campaigns..."}]}
+
+
+class TestKeyedSources(unittest.TestCase):
+    def test_muse_and_adzuna_parsers(self):
+        m = list(sources.parse_muse(MUSE))[0]
+        self.assertEqual((m["source"], m["location"], m["remote_hint"], m["url"]),
+                         ("muse", "Flexible / Remote", True, "https://www.themuse.com/jobs/zeta/hr"))
+        a = list(sources.parse_adzuna(ADZUNA, remote_query=True))[0]
+        self.assertEqual(a["title"], "Marketing Manager")
+        self.assertIn("listing mentions remote", a["location"])   # honest: not assumed fully remote
+        self.assertIn("Short description", a["description"])
+        self.assertEqual(list(sources.parse_adzuna(ADZUNA))[0]["location"], "Austin, Travis County")
+
+    def test_keyed_sources_are_skipped_without_keys(self):
+        cfg = {"search": {"muse": True, "adzuna": True, "keywords": ["qa"]}}
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(sources.plan_for(cfg), [])
+            with self.assertRaises(RuntimeError):
+                sources.fetch_muse()
+        keys = {"MUSE_API_KEY": "m", "ADZUNA_APP_ID": "i", "ADZUNA_APP_KEY": "k"}
+        with mock.patch.dict(os.environ, keys, clear=True):
+            self.assertEqual(sources.plan_for(cfg), [("muse", "Flexible / Remote"), ("adzuna", "qa|")])
+
+
 class TestCompaniesAndSearches(unittest.TestCase):
     def test_careers_links_are_recognized(self):
         cases = {"https://job-boards.greenhouse.io/acme/jobs/123": ("greenhouse", "acme"),
@@ -103,8 +133,20 @@ class TestCompaniesAndSearches(unittest.TestCase):
                          ["Marketing Manager", "engineer"])
         users = [("a", {"settings": {"title_keywords": ["data analyst"], "companies": ["lever:acme"]}}),
                  ("b", {"settings": {"title_keywords": ["Data Analyst", "accountant"]}})]
-        self.assertEqual(pipeline.extra_fetches(users, CFG),
+        self.assertEqual(pipeline.extra_fetches(users, {**CFG, "search": {"himalayas": True}}),
                          [("lever", "acme"), ("himalayas", "data analyst"), ("himalayas", "accountant")])
+
+    def test_muse_and_adzuna_queries_follow_titles_and_cities(self):
+        users = [("a", {"settings": {"title_keywords": ["nurse recruiter"], "remote_only": False,
+                                     "local_areas": ["denver, co", "Boulder"]}})]
+        got = pipeline.extra_fetches(users, {**CFG, "search": {"adzuna": True, "muse": True}})
+        self.assertEqual(got, [("himalayas", "nurse recruiter"), ("adzuna", "nurse recruiter|denver, co"),
+                               ("adzuna", "nurse recruiter|Boulder"), ("muse", "Denver, CO")])
+
+    def test_city_with_state_still_matches_spelled_out_states(self):
+        from jobbot import filters
+        cfg = settings.to_cfg(CFG, {"title_keywords": ["analyst"], "local_areas": ["Austin, TX"]})
+        self.assertTrue(filters.passes({"title": "Data Analyst", "location": "Austin, Texas"}, cfg)[0])
 
 
 class TestRanking(unittest.TestCase):

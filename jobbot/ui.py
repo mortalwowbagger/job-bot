@@ -180,12 +180,13 @@ body.is-hosted .hosted{display:inline-flex} body.is-admin .admin{display:inline-
     <label><span><input type="checkbox" name="remote_only"> Remote jobs only</span></label>
     <label><span><input type="checkbox" name="us_only"> United States only</span></label>
     <label class="wide">Also include on-site / hybrid jobs in these cities (one per line)<textarea name="local_areas" rows="3"
-      placeholder="austin&#10;round rock"></textarea></label>
+      placeholder="Austin, TX&#10;Round Rock, TX"></textarea></label>
     <label>Minimum match score (0-100)<input type="number" name="min_score" min="0" max="100"></label>
     <label class="wide">Companies to watch (optional, one careers link per line)<textarea name="companies" rows="3"
       placeholder="https://jobs.lever.co/acme&#10;https://job-boards.greenhouse.io/example"></textarea>
       <span>Greenhouse, Lever, Ashby, SmartRecruiters, Workable or Recruitee careers pages. Your job titles are also
-      searched on Himalayas and Jobicy, which cover remote jobs in every field.</span></label>
+      searched on Himalayas, Jobicy, The Muse and Adzuna, which cover every field. For local
+      searches write cities as "Austin, TX".</span></label>
   </div>
   <p class="meta" id="seterr" style="color:var(--bad)"></p>
   <div class="marks"><button class="primary" type="submit">Save settings</button>
@@ -243,7 +244,7 @@ let view="review", sel=null, cur=null, wasRunning=false, wasApplying=false, getT
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const scls=s=>s>=85?"s85":s>=70?"s70":"slow";
-const VIA={himalayas:"via Himalayas",jobicy:"via Jobicy",remotive:"via Remotive",muse:"via The Muse"};
+const VIA={himalayas:"via Himalayas",jobicy:"via Jobicy",remotive:"via Remotive",muse:"via The Muse",adzuna:"via Adzuna"};
 const srcLabel=s=>VIA[s]||s;
 const today=()=>new Date().toLocaleDateString("en-CA");
 const ago=d=>{if(!d)return"";const n=Math.round((new Date(today())-new Date(d.slice(0,10)))/864e5);return n<=0?"today":n==1?"1d ago":n+"d ago"};

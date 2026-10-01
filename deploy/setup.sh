@@ -34,6 +34,18 @@ if ! gc secrets describe anthropic-api-key >/dev/null 2>&1; then
   printf '%s' "$KEY" | gc secrets create anthropic-api-key --replication-policy=automatic --data-file=-
 fi
 
+echo "== Optional job-source keys (.env -> Secret Manager, values never printed)"
+for pair in MUSE_API_KEY:muse-api-key ADZUNA_APP_ID:adzuna-app-id ADZUNA_APP_KEY:adzuna-app-key; do
+  VAR=${pair%%:*}; NAME=${pair##*:}
+  VAL=$(grep -E "^$VAR=" .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"'"'"' \r\n' || true)
+  [ -n "$VAL" ] || { echo "  $VAR not in .env (skipped)"; continue; }
+  if gc secrets describe "$NAME" >/dev/null 2>&1; then
+    printf '%s' "$VAL" | gc secrets versions add "$NAME" --data-file=- >/dev/null && echo "  $NAME updated"
+  else
+    printf '%s' "$VAL" | gc secrets create "$NAME" --replication-policy=automatic --data-file=- >/dev/null && echo "  $NAME created"
+  fi
+done
+
 echo "== Service account the app and daily run use: $SA"
 gc iam service-accounts describe "$SA" >/dev/null 2>&1 || \
   gc iam service-accounts create jobbot-runner --display-name="job-bot web + daily run"
@@ -43,8 +55,10 @@ for role in roles/datastore.user roles/run.developer roles/logging.logWriter; do
 done
 gc storage buckets add-iam-policy-binding "gs://$BUCKET" --member="serviceAccount:$SA" \
   --role=roles/storage.objectAdmin >/dev/null
-gc secrets add-iam-policy-binding anthropic-api-key --member="serviceAccount:$SA" \
-  --role=roles/secretmanager.secretAccessor >/dev/null
+for NAME in anthropic-api-key muse-api-key adzuna-app-id adzuna-app-key; do
+  gc secrets describe "$NAME" >/dev/null 2>&1 && gc secrets add-iam-policy-binding "$NAME" \
+    --member="serviceAccount:$SA" --role=roles/secretmanager.secretAccessor >/dev/null
+done
 # lets the web app start the run job, which runs as this same account
 gc iam service-accounts add-iam-policy-binding "$SA" --member="serviceAccount:$SA" \
   --role=roles/iam.serviceAccountUser >/dev/null

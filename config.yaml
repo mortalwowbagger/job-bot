@@ -224,6 +224,8 @@ sources:
 search:
   himalayas: true        # himalayas.app remote jobs, one search per keyword (credit: "via Himalayas")
   jobicy: true           # jobicy.com: the 200 newest US remote jobs, one request per run
+  muse: true             # themuse.com (needs MUSE_API_KEY): 200 newest remote jobs + users' "City, ST" cities
+  adzuna: true           # adzuna.com (needs ADZUNA_APP_ID/KEY): job titles x remote/cities, short descriptions
   keywords: [qa engineer, sdet, test automation, quality assurance, devops engineer]
 
 # ---------------------------------------------------------------

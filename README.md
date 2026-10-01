@@ -145,6 +145,7 @@ All public APIs, no scraping or logins:
 |---|---|
 | company boards (listed in `config.yaml`) | Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Recruitee |
 | keyword / feed search (any field) | [Himalayas](https://himalayas.app) remote jobs (one search per job title), [Jobicy](https://jobicy.com) (newest US remote jobs), Remotive |
+| with a free key in `.env` (optional) | [The Muse](https://www.themuse.com/developers/api/v2/apps) (`MUSE_API_KEY`), [Adzuna](https://developer.adzuna.com/signup) (`ADZUNA_APP_ID`, `ADZUNA_APP_KEY`; short descriptions only) |
 
 Aggregator listings keep their original link and are labeled "via Himalayas" /
 "via Jobicy", as their terms ask. Before any paid scoring, queued jobs are

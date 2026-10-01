@@ -48,17 +48,37 @@ def user_settings(user):
     return user.get("settings") or (settings.OWNER_DEFAULTS if user.get("is_admin") else {})
 
 
-def extra_fetches(users, cfg, max_queries=60):
-    """Per-user additions to the shared fetch: their companies + their job titles as searches."""
-    extra, queries = [], []
+def extra_fetches(users, cfg, max_queries=60, max_adzuna=40, max_muse_cities=10):
+    """Per-user additions to the shared fetch: their companies, and their job titles and
+    cities as searches. Identical queries from different users are fetched once."""
+    search = cfg.get("search") or {}
+    extra, queries, adzuna, muse = [], [], [], []
+
+    def add(lst, item):
+        if item.lower() not in (x.lower() for x in lst):
+            lst.append(item)
+
     for _, d in users:
         s = user_settings(d)
         for c in s.get("companies") or []:
             kind, _, slug = c.partition(":")
             extra.append((kind, slug))
-        if (cfg.get("search") or {}).get("himalayas", True):
-            queries += [q for q in settings.search_queries(s) if q.lower() not in (x.lower() for x in queries)]
-    return extra + [("himalayas", q) for q in queries[:max_queries]]
+        titles = settings.search_queries(s)
+        cities = [c for c in s.get("local_areas") or [] if c.strip()][:3]
+        for q in titles:
+            if search.get("himalayas", True):
+                add(queries, q)
+            if search.get("adzuna"):
+                if s.get("remote_only", True) or not cities:
+                    add(adzuna, f"{q}|")
+                for city in cities:
+                    add(adzuna, f"{q}|{city}")
+        if search.get("muse"):
+            for city in cities:
+                if "," in city:  # The Muse needs "City, ST"
+                    add(muse, city.title().rsplit(",", 1)[0] + "," + city.rsplit(",", 1)[1].upper())
+    return (extra + [("himalayas", q) for q in queries[:max_queries]]
+            + [("adzuna", q) for q in adzuna[:max_adzuna]] + [("muse", c) for c in muse[:max_muse_cities]])
 
 
 def user_cfg(cfg, user):

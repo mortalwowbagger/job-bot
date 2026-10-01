@@ -32,9 +32,13 @@ with open(out, "w") as f:
 PY
 
 echo "== Run job (daily search + Run button)"
+SECRETS=ANTHROPIC_API_KEY=anthropic-api-key:latest
+for pair in MUSE_API_KEY:muse-api-key ADZUNA_APP_ID:adzuna-app-id ADZUNA_APP_KEY:adzuna-app-key; do
+  gc secrets describe "${pair##*:}" >/dev/null 2>&1 && SECRETS="$SECRETS,${pair%%:*}=${pair##*:}:latest"
+done
 gc run jobs deploy jobbot-run --image="$IMAGE" --region="$REGION" --service-account="$SA" \
   --command=python,-m,jobbot.cloud.pipeline --env-vars-file="$ENVFILE" \
-  --set-secrets=ANTHROPIC_API_KEY=anthropic-api-key:latest \
+  --set-secrets="$SECRETS" \
   --memory=2Gi --cpu=1 --task-timeout=60m --max-retries=0
 
 echo "== Web service"

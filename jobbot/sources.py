@@ -3,10 +3,12 @@
 Company boards (a fixed list of employers): Greenhouse, Lever, Ashby,
 SmartRecruiters, Workable, Recruitee. Search sources (keyword/feed based, so
 people outside tech get results too): Himalayas and Jobicy remote-job APIs, and
-Remotive. Aggregators ask for credit: jobs keep a link to their page and the UI
-shows "via Himalayas" etc.
+Remotive; with free API keys in .env also The Muse (MUSE_API_KEY) and Adzuna
+(ADZUNA_APP_ID + ADZUNA_APP_KEY). Aggregators ask for credit: jobs keep a link
+to their page and the UI shows "via Himalayas" etc.
 """
 import html
+import os
 import re
 
 import requests
@@ -157,6 +159,32 @@ def parse_recruitee(slug, data):
         )
 
 
+def parse_muse(data):
+    for j in data.get("results", []):
+        locs = [l.get("name", "") for l in j.get("locations") or []]
+        url = (j.get("refs") or {}).get("landing_page", "")
+        yield dict(
+            source="muse", ext_id=str(j["id"]), board="muse", company=(j.get("company") or {}).get("name", ""),
+            title=j.get("name", ""), location="; ".join(locs),
+            remote_hint=any("remote" in l.lower() for l in locs), url=url, apply_url=url,
+            description=strip_html(j.get("contents", "")),
+        )
+
+
+def parse_adzuna(data, remote_query=False):
+    for j in data.get("results", []):
+        loc = (j.get("location") or {}).get("display_name", "")
+        if remote_query:  # matched "remote" somewhere in the listing; say so rather than assume fully remote
+            loc = f"{loc} (listing mentions remote)" if loc else "Listing mentions remote"
+        yield dict(
+            source="adzuna", ext_id=str(j["id"]), board="adzuna", company=(j.get("company") or {}).get("display_name", ""),
+            title=strip_html(j.get("title", "")), location=loc, remote_hint=False,
+            url=j.get("redirect_url", ""), apply_url=j.get("redirect_url", ""),
+            # Adzuna's API only returns a ~500-character snippet
+            description=strip_html(j.get("description", "")) + "\n\n[Short description from Adzuna; full posting at the link.]",
+        )
+
+
 def fill_description(job):
     """Some list APIs (SmartRecruiters) omit descriptions; fetch it for jobs we keep."""
     if job.get("description") or not job.get("detail_url"):
@@ -219,6 +247,41 @@ def fetch_himalayas(query, country="US", pages=2):
     return jobs
 
 
+def fetch_muse(location="Flexible / Remote", pages=10):
+    """Newest jobs for one Muse location ("Flexible / Remote" or "City, ST"). Needs MUSE_API_KEY."""
+    key = os.environ.get("MUSE_API_KEY")
+    if not key:
+        raise RuntimeError("MUSE_API_KEY not set")
+    jobs = []
+    for page in range(1, pages + 1):
+        data = _get("https://www.themuse.com/api/public/jobs", page=page, location=location,
+                    descending="true", api_key=key)
+        jobs += list(parse_muse(data))
+        if page >= data.get("page_count", 0):
+            break
+    return jobs
+
+
+def fetch_adzuna(query):
+    """query is 'keywords|where'; empty where = US-wide listings that mention remote. Needs ADZUNA keys."""
+    app_id, app_key = os.environ.get("ADZUNA_APP_ID"), os.environ.get("ADZUNA_APP_KEY")
+    if not (app_id and app_key):
+        raise RuntimeError("ADZUNA_APP_ID / ADZUNA_APP_KEY not set")
+    what, _, where = query.partition("|")
+    params = dict(app_id=app_id, app_key=app_key, what=what, results_per_page=50, sort_by="date",
+                  max_days_old=7, **{"content-type": "application/json"})
+    if where:
+        params["where"] = where
+    else:
+        params["what_and"] = "remote"
+    return parse_adzuna(_get("https://api.adzuna.com/v1/api/jobs/us/search/1", **params), remote_query=not where)
+
+
+def keys_for(kind):
+    return {"muse": bool(os.environ.get("MUSE_API_KEY")),
+            "adzuna": bool(os.environ.get("ADZUNA_APP_ID") and os.environ.get("ADZUNA_APP_KEY"))}.get(kind, True)
+
+
 def fetch_jobicy(geo="usa"):
     """The 200 newest remote jobs for a region (one request; Jobicy asks for <= 1 automated check/hour)."""
     return parse_jobicy(_get("https://jobicy.com/api/v2/remote-jobs", count=200, geo=geo))
@@ -227,7 +290,7 @@ def fetch_jobicy(geo="usa"):
 FETCHERS = {"greenhouse": fetch_greenhouse, "lever": fetch_lever, "ashby": fetch_ashby,
             "smartrecruiters": fetch_smartrecruiters, "workable": fetch_workable,
             "recruitee": fetch_recruitee, "remotive": fetch_remotive, "himalayas": fetch_himalayas,
-            "jobicy": fetch_jobicy}
+            "jobicy": fetch_jobicy, "muse": fetch_muse, "adzuna": fetch_adzuna}
 BOARD_KINDS = ["greenhouse", "lever", "ashby", "smartrecruiters", "workable", "recruitee"]
 
 
@@ -243,10 +306,14 @@ def plan_for(cfg, extra=()):
         plan.append(("jobicy", "usa"))
     if search.get("himalayas"):
         plan += [("himalayas", q) for q in search.get("keywords") or []]
+    if search.get("muse") and keys_for("muse"):
+        plan.append(("muse", "Flexible / Remote"))
+    if search.get("adzuna") and keys_for("adzuna"):
+        plan += [("adzuna", f"{q}|") for q in search.get("keywords") or []]
     seen, out = set(), []
     for item in list(plan) + list(extra):
         key = (item[0], str(item[1]).lower())
-        if key not in seen and item[0] in FETCHERS:
+        if key not in seen and item[0] in FETCHERS and keys_for(item[0]):
             seen.add(key)
             out.append(item)
     return out

@@ -146,4 +146,6 @@ def to_cfg(base, settings):
             "title_include": [phrase_pattern(p) for p in s["title_keywords"]],
             "title_exclude": [phrase_pattern(p) for p in s["exclude_keywords"]],
             "remote_only": s["remote_only"], "us_only": s["us_only"],
-            "local_areas": list(s["local_areas"]), "min_score": s["min_score"]}
+            # "Austin, TX" -> match "austin" so "Austin, Texas" postings count too
+            "local_areas": [a.split(",")[0].strip() for a in s["local_areas"] if a.strip()],
+            "min_score": s["min_score"]}
