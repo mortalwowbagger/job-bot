@@ -57,6 +57,11 @@ else
     --time-zone="America/Chicago" --uri="$URI" --http-method=POST --oauth-service-account-email="$SA"
 fi
 
+echo "== Browser extension zip (served at /job-bot-extension.zip)"
+rm -f hosting_public/job-bot-extension.zip
+TMPX=$(mktemp -d) && cp -R extension "$TMPX/job-bot-extension" && \
+  (cd "$TMPX" && zip -qr - job-bot-extension -x '*.DS_Store') > hosting_public/job-bot-extension.zip && rm -rf "$TMPX"
+
 echo "== Firebase Hosting + Firestore rules"
 firebase deploy --only hosting,firestore:rules --project "$PROJECT"
 echo "Live: https://$PROJECT.web.app"

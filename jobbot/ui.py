@@ -193,6 +193,18 @@ body.is-hosted .hosted{display:inline-flex} body.is-admin .admin{display:inline-
   <p class="meta" id="seterr" style="color:var(--bad)"></p>
   <div class="marks"><button class="primary" type="submit">Save settings</button>
     <button type="button" onclick="$('setmodal').close()">Close</button><span class="meta" id="setsaved"></span></div>
+  <h3>Browser extension</h3>
+  <p class="meta">Fills applications in your own Chrome: contact details, resume and cover letter. Works on
+    Greenhouse, Lever, Ashby and most other forms, including jobs found via Himalayas and other job sites.
+    It never submits; you review and submit yourself.</p>
+  <details class="meta"><summary>Install (2 minutes)</summary><ol>
+    <li><a href="/job-bot-extension.zip">Download the extension</a> and unzip it.</li>
+    <li>In Chrome open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top right).</li>
+    <li>Click <b>Load unpacked</b> and choose the unzipped <code>job-bot-extension</code> folder.</li>
+    <li>Pin the job-bot icon, reload this page, then click <b>Connect browser extension</b> below.</li></ol></details>
+  <p class="meta" id="extstatus"></p>
+  <div class="marks"><button type="button" onclick="connectExt()">Connect browser extension</button>
+    <button type="button" onclick="disconnectExt()">Disconnect</button></div>
   <h3>Delete my data</h3>
   <p class="meta">Permanently deletes your profile, settings, prospects, applications, timelines and PDFs from job-bot.</p>
   <div class="note"><input id="delconfirm" placeholder="Type DELETE to confirm"><button type="button" onclick="deleteMe()">Delete everything</button></div>
@@ -358,7 +370,20 @@ async function openSettings(){const r=await api("/api/settings"),s=r.settings,f=
   f.local_areas.value=lines(s.local_areas);f.remote_only.checked=!!s.remote_only;f.us_only.checked=!!s.us_only;
   f.min_score.value=s.min_score;f.companies.value=lines(s.companies);cityHint();$("seterr").textContent="";$("setsaved").textContent="";$("delmsg").textContent="";$("delconfirm").value="";
   const L=r.limits;$("usage").textContent=`Runs today: ${L.runs_today} of ${L.runs_per_day} · this month's estimated API cost: $${L.month_cost.toFixed(2)}`+(r.saved?"":" · not saved yet");
-  $("setmodal").showModal()}
+  $("setmodal").showModal();pingExt()}
+let ext={present:false,connected:false};
+window.addEventListener("message",e=>{if(e.source!==window||e.origin!==location.origin)return;const d=e.data||{};
+  if(d.source!=="jobbot-ext")return;ext.present=true;
+  if(d.type==="pong")ext.connected=!!d.connected;if(d.type==="connected")ext.connected=true;if(d.type==="disconnected")ext.connected=false;
+  extStatus()});
+function extStatus(){const el=$("extstatus");if(!el)return;
+  el.textContent=!ext.present?"Extension not detected in this browser.":ext.connected?"Connected ✓ The job-bot icon can now fill applications.":"Installed, not connected yet."}
+function pingExt(){window.postMessage({source:"jobbot-page",type:"ping"},location.origin);setTimeout(extStatus,400)}
+async function connectExt(){if(!ext.present){$("extstatus").textContent="Install the extension first (steps above), then reload this page.";return}
+  try{const r=await post("/api/ext/connect");window.postMessage({source:"jobbot-page",type:"connect",token:r.token},location.origin)}
+  catch(e){$("extstatus").textContent=e.message}}
+async function disconnectExt(){try{const r=await post("/api/ext/disconnect");window.postMessage({source:"jobbot-page",type:"disconnect"},location.origin);
+  $("extstatus").textContent=`Disconnected (${r.removed} browser${r.removed==1?"":"s"}).`}catch(e){$("extstatus").textContent=e.message}}
 function cityHint(){ // same rule as settings.city_warnings on the server
   const bad=$("setform").local_areas.value.split("\n").map(x=>x.trim()).filter(x=>x&&!/,\s*[A-Za-z]{2}\.?\s*$/.test(x));
   $("cityhint").textContent=bad.length?`${bad.slice(0,3).map(x=>`'${x}'`).join(", ")}${bad.length>3?"…":""} ${bad.length==1?"has":"have"} no state. `+
@@ -424,7 +449,8 @@ async function poll(){
 }
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)poll()});
 async function refresh(){await loadList();await poll()}
-function showApp(){$("login").style.display="none";$("pending").style.display="none";$("app").style.display="block";renderTabs();refresh()}
+function showApp(){$("login").style.display="none";$("pending").style.display="none";$("app").style.display="block";renderTabs();refresh();
+  if(CFG.hosted&&new URLSearchParams(location.search).get("settings")){history.replaceState(null,"",location.pathname);setTimeout(openSettings,300)}}
 function showLogin(){$("app").style.display="none";$("pending").style.display="none";$("login").style.display="block"}
 
 let fb=null;

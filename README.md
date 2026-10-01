@@ -85,6 +85,12 @@ the resume PDF, copy buttons for the cover letter and screening answers, an
 Applied / Interview / Offer / Rejected / Skip buttons with notes. **Run job
 search** shows live progress, and you get a macOS notification when a run ends.
 
+### Browser extension (hosted)
+
+Pre-fill in your own Chrome, also for jobs found via Himalayas and other job
+sites: download it from **Settings → Browser extension**, load it unpacked, click
+**Connect**. See [`extension/README.md`](extension/README.md).
+
 ### Tracking applications
 
 Every application gets details (applied date, salary, contact, next step,

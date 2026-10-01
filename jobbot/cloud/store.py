@@ -4,6 +4,7 @@ Layout (everything is per user, so friends can be added later):
   users/{uid}                      email, access (pending/approved/denied), is_admin,
                                    settings, profile_yaml, last_seen, created_at
   users/{uid}/usage/{YYYY-MM[-DD]} runs, manual_runs, cost_usd (cost guardrails)
+  ext_tokens/{sha256(token)}       uid, created_at, last_used (browser-extension keys; only hashes stored)
   users/{uid}/jobs/{job_id}        one prospect or application (only jobs that
                                    passed the free filters are stored)
   users/{uid}/jobs/{job_id}/events timeline entries
@@ -65,8 +66,26 @@ class FirestoreStore:
         snap = self._user(uid).collection("usage").document(key).get()
         return snap.to_dict() if snap.exists else {}
 
+    def put_ext_token(self, token_hash, uid):
+        self.db.collection("ext_tokens").document(token_hash).set({"uid": uid, "created_at": now()})
+
+    def get_ext_token(self, token_hash):
+        snap = self.db.collection("ext_tokens").document(token_hash).get()
+        return snap.to_dict() if snap.exists else None
+
+    def touch_ext_token(self, token_hash):
+        self.db.collection("ext_tokens").document(token_hash).set({"last_used": now()}, merge=True)
+
+    def delete_ext_tokens(self, uid):
+        n = 0
+        for snap in self.db.collection("ext_tokens").where("uid", "==", uid).stream():
+            snap.reference.delete()
+            n += 1
+        return n
+
     def delete_user_data(self, uid):
-        """Everything: jobs, timelines, runs, usage, profile, settings, PDFs."""
+        """Everything: jobs, timelines, runs, usage, profile, settings, PDFs, extension keys."""
+        self.delete_ext_tokens(uid)
         self.db.recursive_delete(self._user(uid))
         if self.bucket:
             for blob in self.bucket.list_blobs(prefix=f"users/{uid}/"):
@@ -141,6 +160,7 @@ class MemoryStore:
 
     def __init__(self):
         self.users, self.jobsd, self.eventsd, self.files, self.runs, self.usage = {}, {}, {}, {}, {}, {}
+        self.ext = {}
 
     def get_user(self, uid):
         return self.users.get(uid)
@@ -164,7 +184,25 @@ class MemoryStore:
     def get_usage(self, uid, key):
         return dict(self.usage.get((uid, key), {}))
 
+    def put_ext_token(self, token_hash, uid):
+        self.ext[token_hash] = {"uid": uid, "created_at": now()}
+
+    def get_ext_token(self, token_hash):
+        t = self.ext.get(token_hash)
+        return dict(t) if t else None
+
+    def touch_ext_token(self, token_hash):
+        if token_hash in self.ext:
+            self.ext[token_hash]["last_used"] = now()
+
+    def delete_ext_tokens(self, uid):
+        gone = [h for h, t in self.ext.items() if t["uid"] == uid]
+        for h in gone:
+            self.ext.pop(h)
+        return len(gone)
+
     def delete_user_data(self, uid):
+        self.delete_ext_tokens(uid)
         self.users.pop(uid, None)
         self.runs.pop(uid, None)
         for d in (self.jobsd, self.eventsd, self.usage):

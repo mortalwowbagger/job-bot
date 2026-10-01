@@ -13,3 +13,4 @@ tracker.csv
 .claude/
 profile.yaml.bak
 .firebase/
+hosting_public/*.zip

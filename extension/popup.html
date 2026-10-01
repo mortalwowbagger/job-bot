@@ -1,0 +1,22 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="popup.css"></head>
+<body>
+  <header><b>job-bot</b><span id="who" class="meta"></span></header>
+  <section id="disconnected" hidden>
+    <p>Connect this extension to your job-bot account.</p>
+    <ol class="meta"><li>Open job-bot and go to <b>Settings</b>.</li><li>Click <b>Connect browser extension</b>.</li></ol>
+    <button class="primary" id="opensite">Open job-bot Settings</button>
+  </section>
+  <section id="main" hidden>
+    <label class="meta" for="job">Which application is this?</label>
+    <select id="job"></select>
+    <div id="jobmeta" class="meta"></div>
+    <button class="primary" id="fill">Fill this application</button>
+    <div id="result" class="result" hidden></div>
+    <div class="row"><button id="applied">Mark as applied</button><button id="opensite2">Open job-bot</button></div>
+    <p class="meta small">Fills contact details and attaches your resume and cover letter. Never submits and never
+      answers work-authorization, sponsorship, salary or EEO questions. Review everything, then submit yourself.</p>
+  </section>
+  <div id="err" class="err" hidden></div>
+  <script src="popup.js"></script>
+</body></html>

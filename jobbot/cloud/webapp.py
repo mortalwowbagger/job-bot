@@ -5,9 +5,11 @@ Auth: the page signs in with Firebase Auth (Google) and sends the ID token as
 Every response is `Cache-Control: private, no-store` so Hosting's CDN never
 caches one user's data.
 """
+import hashlib
 import json
 import os
 import re
+import secrets
 import time
 from datetime import date, datetime, timedelta
 
@@ -22,6 +24,8 @@ DETAIL_FIELDS = ["company", "title", "location", "url", "applied_at", "contact",
                  "next_step", "follow_up", "notes"]
 STAGE = {"offer": 0, "interview": 1, "applied": 2}
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# the only things a browser-extension key may do
+EXT_PATHS = [r"/api/ext/me", r"/api/ext/jobs", r"/files/[^/]+/[^/]+", r"/api/jobs/[^/]+/mark"]
 RUN_STALE = timedelta(minutes=70)  # a "running" flag older than this is a crashed run
 
 
@@ -89,6 +93,9 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
         header = request.headers.get("Authorization", "")
         if not header.startswith("Bearer "):
             return jsonify(error="Sign in required"), 401
+        if header.startswith("Bearer jbx_"):  # browser-extension key: limited to EXT_PATHS
+            return ext_auth(header[7:])
+        g.via_extension = False
         try:
             claims = verify_token(header[7:])
         except Exception:  # noqa: BLE001 - expired / forged token
@@ -114,6 +121,21 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
             msg = ("Your access request is waiting for approval." if user.get("access") == "pending"
                    else "Access to this job-bot isn't available for your account.")
             return jsonify(error=msg, access=user.get("access")), 403
+        return None
+
+    def ext_auth(token):
+        h = hashlib.sha256(token.encode()).hexdigest()
+        rec = store.get_ext_token(h)
+        if not rec:
+            return jsonify(error="Extension disconnected. Reconnect it from job-bot Settings."), 401
+        if not any(re.fullmatch(p, request.path) for p in EXT_PATHS):
+            return jsonify(error="Not available to the extension."), 403
+        user = store.get_user(rec["uid"]) or {}
+        if user.get("access") != "approved":
+            return jsonify(error="Access to this job-bot isn't available for your account."), 403
+        if (rec.get("last_used") or "") < (datetime.now() - timedelta(hours=1)).isoformat():
+            store.touch_ext_token(h)
+        g.uid, g.user, g.is_admin, g.via_extension = rec["uid"], user, bool(user.get("is_admin")), True
         return None
 
     def job_or_404(jid):
@@ -271,6 +293,35 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
         store.delete_user_data(g.uid)
         counts_cache.pop(g.uid, None)
         return jsonify(ok=True)
+
+    @app.post("/api/ext/connect")
+    def ext_connect():
+        if g.via_extension:
+            abort(403)
+        token = "jbx_" + secrets.token_urlsafe(32)
+        store.put_ext_token(hashlib.sha256(token.encode()).hexdigest(), g.uid)
+        return jsonify(token=token)
+
+    @app.post("/api/ext/disconnect")
+    def ext_disconnect():
+        if g.via_extension:
+            abort(403)
+        return jsonify(removed=store.delete_ext_tokens(g.uid))
+
+    @app.get("/api/ext/me")
+    def ext_me():
+        p, _ = prof.validate(g.user.get("profile_yaml") or "")
+        c = (p or {}).get("contact") or {}
+        return jsonify(email=g.user.get("email"), contact={k: c.get(k) or "" for k in
+                       ("first_name", "last_name", "email", "phone", "location", "linkedin", "github",
+                        "current_company")})
+
+    @app.get("/api/ext/jobs")
+    def ext_jobs():
+        rows = store.jobs(g.uid, ["tailored", "applied", "interview"])
+        rows.sort(key=lambda r: (r["status"] != "tailored", -(r.get("score") or 0)))
+        return jsonify([{**summary(r), "files": r.get("files") or {}, "has_packet": bool(r.get("has_packet")),
+                         "cover_letter": r.get("cover_letter") or ""} for r in rows[:100]])
 
     @app.get("/api/settings")
     def get_settings():
