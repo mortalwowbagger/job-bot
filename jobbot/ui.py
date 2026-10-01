@@ -197,11 +197,12 @@ body.is-hosted .hosted{display:inline-flex} body.is-admin .admin{display:inline-
   <p class="meta">Fills applications in your own Chrome: contact details, resume and cover letter. Works on
     Greenhouse, Lever, Ashby and most other forms, including jobs found via Himalayas and other job sites.
     It never submits; you review and submit yourself.</p>
-  <details class="meta"><summary>Install (2 minutes)</summary><ol>
-    <li><a href="/job-bot-extension.zip">Download the extension</a> and unzip it.</li>
+  <div id="extinstall"><a class="btn primary" href="/job-bot-extension.zip" download>Download extension (.zip)</a>
+    <ol class="meta">
+    <li>Unzip the download.</li>
     <li>In Chrome open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top right).</li>
     <li>Click <b>Load unpacked</b> and choose the unzipped <code>job-bot-extension</code> folder.</li>
-    <li>Pin the job-bot icon, reload this page, then click <b>Connect browser extension</b> below.</li></ol></details>
+    <li>Pin the job-bot icon (puzzle-piece menu), reload this page, then click <b>Connect browser extension</b>.</li></ol></div>
   <p class="meta" id="extstatus"></p>
   <div class="marks"><button type="button" onclick="connectExt()">Connect browser extension</button>
     <button type="button" onclick="disconnectExt()">Disconnect</button></div>
@@ -377,9 +378,10 @@ window.addEventListener("message",e=>{if(e.source!==window||e.origin!==location.
   if(d.type==="pong")ext.connected=!!d.connected;if(d.type==="connected")ext.connected=true;if(d.type==="disconnected")ext.connected=false;
   extStatus()});
 function extStatus(){const el=$("extstatus");if(!el)return;
-  el.textContent=!ext.present?"Extension not detected in this browser.":ext.connected?"Connected ✓ The job-bot icon can now fill applications.":"Installed, not connected yet."}
+  $("extinstall").style.display=ext.connected?"none":"";
+  el.textContent=!ext.present?"Extension not detected in this browser yet: download and install it above.":ext.connected?"Connected ✓ The job-bot icon can now fill applications.":"Installed, not connected yet."}
 function pingExt(){window.postMessage({source:"jobbot-page",type:"ping"},location.origin);setTimeout(extStatus,400)}
-async function connectExt(){if(!ext.present){$("extstatus").textContent="Install the extension first (steps above), then reload this page.";return}
+async function connectExt(){if(!ext.present){$("extstatus").textContent="Install the extension first (Download extension above, then the steps), then reload this page.";return}
   try{const r=await post("/api/ext/connect");window.postMessage({source:"jobbot-page",type:"connect",token:r.token},location.origin)}
   catch(e){$("extstatus").textContent=e.message}}
 async function disconnectExt(){try{const r=await post("/api/ext/disconnect");window.postMessage({source:"jobbot-page",type:"disconnect"},location.origin);
