@@ -284,7 +284,7 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
         if errors:
             return jsonify(error="; ".join(errors), errors=errors), 400
         store.update_user(g.uid, settings=clean_s)
-        return jsonify(ok=True, settings=clean_s)
+        return jsonify(ok=True, settings=clean_s, warnings=st.city_warnings(clean_s["local_areas"]))
 
     def budget_used():
         """Estimated API spend this month by everyone except admins (cached 5 min)."""

@@ -287,6 +287,10 @@ class TestAccessAndSettings(unittest.TestCase):
         self.c.post("/api/settings", json={"title_keywords": "sdet\nqa engineer", "min_score": 75},
                     headers=self.H["friend"])
         self.assertEqual(self.store.get_user("f")["settings"]["title_keywords"], ["sdet", "qa engineer"])
+        r = self.c.post("/api/settings", json={"title_keywords": "sdet", "local_areas": "denver"},
+                        headers=self.H["friend"])
+        self.assertEqual(r.status_code, 200)                                   # saved anyway...
+        self.assertIn("no state", r.get_json()["warnings"][0])                  # ...with a reminder
         per_day = CFG["cloud"]["friend_limits"]["runs_per_day"]
         for _ in range(per_day):
             self.assertEqual(self.c.post("/api/run", headers=self.H["friend"]).status_code, 200)

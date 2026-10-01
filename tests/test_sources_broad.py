@@ -143,6 +143,14 @@ class TestCompaniesAndSearches(unittest.TestCase):
         self.assertEqual(got, [("himalayas", "nurse recruiter"), ("adzuna", "nurse recruiter|denver, co"),
                                ("adzuna", "nurse recruiter|Boulder"), ("muse", "Denver, CO")])
 
+    def test_reminder_for_cities_without_a_state(self):
+        self.assertEqual(settings.city_warnings(["Austin, TX", "Denver, co", "Boise, ID."]), [])
+        w = settings.city_warnings(["austin", "Austin, TX", "round rock"])
+        self.assertEqual(len(w), 1)
+        self.assertIn("'austin', 'round rock' have no state", w[0])
+        self.assertIn('"Austin, TX"', w[0])
+        self.assertTrue(all("," in c for c in settings.OWNER_DEFAULTS["local_areas"]))
+
     def test_city_with_state_still_matches_spelled_out_states(self):
         from jobbot import filters
         cfg = settings.to_cfg(CFG, {"title_keywords": ["analyst"], "local_areas": ["Austin, TX"]})

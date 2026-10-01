@@ -33,6 +33,19 @@ def parse_company(text):
     return None
 
 
+STATE = re.compile(r",\s*[A-Za-z]{2}\.?\s*$")
+
+
+def city_warnings(cities):
+    """Non-blocking reminders for cities missing a state ("austin" -> "Austin, TX")."""
+    missing = [c for c in cities or [] if c.strip() and not STATE.search(c)]
+    if not missing:
+        return []
+    shown = ", ".join(f"'{c}'" for c in missing[:3]) + ("…" if len(missing) > 3 else "")
+    return [f"{shown} {'has' if len(missing) == 1 else 'have'} no state. Write cities like "
+            f"\"Austin, TX\" so The Muse can search them (filtering still works without it)."]
+
+
 def search_queries(s):
     """Job-title phrases usable as keyword searches (no wildcards, not too short)."""
     out = []
@@ -58,7 +71,8 @@ OWNER_DEFAULTS = {
         "avionics", "firmware", "pcb", "credentialing", "data modeling", "loan salability"],
     "remote_only": True,
     "us_only": True,
-    "local_areas": ["austin", "round rock", "cedar park", "pflugerville", "kyle", "san marcos"],
+    "local_areas": ["Austin, TX", "Round Rock, TX", "Cedar Park, TX", "Pflugerville, TX", "Kyle, TX",
+                    "San Marcos, TX"],
     "min_score": 70,
     "companies": [],
 }

@@ -108,6 +108,7 @@ body.is-hosted .hosted{display:inline-flex} body.is-admin .admin{display:inline-
 .urow .who{flex:1;min-width:200px}
 .grid label span{color:var(--muted);font-size:12px}
 .grid label input[type=checkbox]{width:auto;min-height:0}
+.grid label span.cityhint{color:var(--warn)}
 #login{display:none;max-width:420px;margin:12vh auto;padding:28px;background:var(--panel);border:1px solid var(--line);border-radius:14px;text-align:center}
 #login h1{font-size:22px;margin-bottom:8px}
 #app{display:none}
@@ -180,7 +181,8 @@ body.is-hosted .hosted{display:inline-flex} body.is-admin .admin{display:inline-
     <label><span><input type="checkbox" name="remote_only"> Remote jobs only</span></label>
     <label><span><input type="checkbox" name="us_only"> United States only</span></label>
     <label class="wide">Also include on-site / hybrid jobs in these cities (one per line)<textarea name="local_areas" rows="3"
-      placeholder="Austin, TX&#10;Round Rock, TX"></textarea></label>
+      placeholder="Austin, TX&#10;Round Rock, TX" oninput="cityHint()"></textarea>
+      <span class="cityhint" id="cityhint"></span></label>
     <label>Minimum match score (0-100)<input type="number" name="min_score" min="0" max="100"></label>
     <label class="wide">Companies to watch (optional, one careers link per line)<textarea name="companies" rows="3"
       placeholder="https://jobs.lever.co/acme&#10;https://job-boards.greenhouse.io/example"></textarea>
@@ -354,14 +356,18 @@ const lines=v=>(v||[]).join("\n");
 async function openSettings(){const r=await api("/api/settings"),s=r.settings,f=$("setform");
   f.title_keywords.value=lines(s.title_keywords);f.exclude_keywords.value=lines(s.exclude_keywords);
   f.local_areas.value=lines(s.local_areas);f.remote_only.checked=!!s.remote_only;f.us_only.checked=!!s.us_only;
-  f.min_score.value=s.min_score;f.companies.value=lines(s.companies);$("seterr").textContent="";$("setsaved").textContent="";$("delmsg").textContent="";$("delconfirm").value="";
+  f.min_score.value=s.min_score;f.companies.value=lines(s.companies);cityHint();$("seterr").textContent="";$("setsaved").textContent="";$("delmsg").textContent="";$("delconfirm").value="";
   const L=r.limits;$("usage").textContent=`Runs today: ${L.runs_today} of ${L.runs_per_day} · this month's estimated API cost: $${L.month_cost.toFixed(2)}`+(r.saved?"":" · not saved yet");
   $("setmodal").showModal()}
+function cityHint(){ // same rule as settings.city_warnings on the server
+  const bad=$("setform").local_areas.value.split("\n").map(x=>x.trim()).filter(x=>x&&!/,\s*[A-Za-z]{2}\.?\s*$/.test(x));
+  $("cityhint").textContent=bad.length?`${bad.slice(0,3).map(x=>`'${x}'`).join(", ")}${bad.length>3?"…":""} ${bad.length==1?"has":"have"} no state. `+
+    `Write cities like "Austin, TX" so The Muse can search them (filtering still works without it).`:""}
 async function saveSettings(ev){ev.preventDefault();const f=$("setform");$("seterr").textContent="";$("setsaved").textContent="";
-  try{await post("/api/settings",{title_keywords:f.title_keywords.value,exclude_keywords:f.exclude_keywords.value,
+  try{const r=await post("/api/settings",{title_keywords:f.title_keywords.value,exclude_keywords:f.exclude_keywords.value,
     local_areas:f.local_areas.value,remote_only:f.remote_only.checked,us_only:f.us_only.checked,min_score:f.min_score.value,
     companies:f.companies.value});
-    $("setsaved").textContent="Saved. The next run uses these.";if(onboarding)$("setmodal").close();poll()}catch(e){$("seterr").textContent=e.message}}
+    $("setsaved").textContent="Saved. The next run uses these."+((r.warnings||[]).length?" Note: "+r.warnings.join(" "):"");if(onboarding)$("setmodal").close();poll()}catch(e){$("seterr").textContent=e.message}}
 async function deleteMe(){try{await post("/api/me/delete",{confirm:$("delconfirm").value.trim()});$("delmsg").textContent="Deleted.";
   setTimeout(signOut,1200)}catch(e){$("delmsg").textContent=e.message}}
 async function openUsers(){await renderUsers();$("usersmodal").showModal()}
