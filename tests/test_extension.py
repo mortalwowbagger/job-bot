@@ -100,6 +100,79 @@ class TestFillScript(unittest.TestCase):
         self.assertNotIn("email", filled)
 
 
+EMPLOYMENT = {"employment": [{"company": "Northwind", "title": "QA Lead", "start_month": "March", "start_year": "2026",
+                             "end_month": "", "end_year": "", "current": True}],
+              "education": [{"school": "University of Texas at Austin", "degree": "B.S.", "field": "Computer Science",
+                             "start_year": "", "end_year": "2016"}]}
+GH_EMPLOYMENT = """<label for=company-name-0>Company name</label><input id=company-name-0>
+<label for=title-0>Title</label><input id=title-0><label for=start-date-year-0>Start date year</label><input id=start-date-year-0>
+<label for=end-date-year-0>End date year</label><input id=end-date-year-0>
+<label><input type=checkbox id=current-role-0_1> Current role</label>"""
+# a stand-in for react-select: input -> fiber chain -> component with options / loadOptions / selectOption
+MOCK_SELECTS = """<input role=combobox id=start-date-month-0><input role=combobox id=end-date-month-0>
+<input role=combobox id=school--0><input role=combobox id=degree--0><input role=combobox id=discipline--0>
+<script>
+  window.picked = {};
+  function mock(id, opts, load) {
+    const comp = { props: { options: load ? [] : opts.map(l => ({label: l})),
+                   loadOptions: load ? (q) => Promise.resolve({options: opts.filter(l => l.toLowerCase().includes(q.toLowerCase())).map(l => ({label: l}))}) : undefined },
+                   getValue: () => (picked[id] ? [picked[id]] : []), selectOption: (o) => { picked[id] = o.label; } };
+    document.getElementById(id)["__reactFiber$x"] = { stateNode: null, return: { stateNode: comp, return: null } };
+  }
+  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  mock("start-date-month-0", months); mock("end-date-month-0", months);
+  mock("school--0", ["University of Texas - Arlington", "University of Texas - Austin", "Austin College"], true);
+  mock("degree--0", ["Associate's Degree", "Bachelor's Degree", "Master's Degree"], true);
+  mock("discipline--0", ["Computer Engineering", "Computer Science"], true);
+</script>"""
+
+
+class TestEmploymentAndEducation(unittest.TestCase):
+    def page(self, html, payload, script):
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            b = p.chromium.launch(); pg = b.new_page()
+            pg.set_content(f"<html><body>{html}</body></html>")
+            pg.add_script_tag(path=str(REPO / "extension" / script))
+            fn = "jobbotFill" if script == "fill.js" else "jobbotSelects"
+            res = pg.evaluate(f"async p => {fn}(p)", payload)
+            extra = pg.evaluate("""() => ({values: Object.fromEntries([...document.querySelectorAll('input')].map(e =>
+                [e.id, e.type === 'checkbox' ? e.checked : e.value])), picked: window.picked || {}})""")
+            b.close()
+        return res, extra
+
+    def test_greenhouse_employment_text_fields_and_current_role(self):
+        res, x = self.page(GH_EMPLOYMENT, {**PAYLOAD, **EMPLOYMENT}, "fill.js")
+        v = x["values"]
+        self.assertEqual((v["company-name-0"], v["title-0"], v["start-date-year-0"], v["current-role-0_1"], v["end-date-year-0"]),
+                         ("Northwind", "QA Lead", "2026", True, ""))   # current job: no end date
+
+    def test_dropdowns_months_school_degree_field(self):
+        res, x = self.page(MOCK_SELECTS, EMPLOYMENT, "select.js")
+        self.assertEqual(x["picked"], {"start-date-month-0": "March", "school--0": "University of Texas - Austin",
+                                       "degree--0": "Bachelor's Degree", "discipline--0": "Computer Science"})
+        self.assertEqual(res["notes"], [])
+
+    def test_no_education_gives_a_note_not_a_guess(self):
+        res, x = self.page(MOCK_SELECTS, {"employment": [], "education": []}, "select.js")
+        self.assertNotIn("school--0", x["picked"])
+        self.assertIn("Add your education", res["notes"][0])
+
+
+class TestProfileDates(unittest.TestCase):
+    def test_parse_dates_and_education(self):
+        from jobbot import profile as P
+        self.assertEqual(P.parse_dates("March 2026 - Present"),
+                         {"start_month": "March", "start_year": "2026", "end_month": "", "end_year": "", "current": True})
+        self.assertEqual(P.parse_dates("Oct 2018 – Aug 2022")["end_month"], "August")
+        self.assertEqual(P.education_line({"school": "UT Austin", "degree": "B.S.", "field": "CS", "end_year": "2016"}),
+                         "B.S. in CS, UT Austin, 2016")
+        self.assertEqual(P.education_line("B.A., Somewhere, 2010"), "B.A., Somewhere, 2010")
+        ok = (REPO / "profile.example.yaml").read_text()
+        self.assertEqual(P.validate(ok)[1], [])
+        self.assertIn("school is required", " ".join(P.validate(ok.replace("school: University of Colorado Boulder", "school: ''"))[1]))
+
+
 class TestExtensionKeys(unittest.TestCase):
     def setUp(self):
         self.store = MemoryStore()
@@ -122,6 +195,8 @@ class TestExtensionKeys(unittest.TestCase):
     def test_extension_can_do_its_four_things(self):
         me = self.c.get("/api/ext/me", headers=self.ext).get_json()
         self.assertEqual((me["contact"]["first_name"], me["contact"]["email"]), ("Alex", "alex.example@example.com"))
+        self.assertEqual((me["employment"][0]["company"], me["employment"][0]["current"]), ("Northwind Bank", True))
+        self.assertEqual(me["education"][0]["degree"], "B.S.")
         jobs = self.c.get("/api/ext/jobs", headers=self.ext).get_json()
         self.assertEqual([(j["id"], j["files"]["resume"]) for j in jobs], [("j1", "R_Resume.pdf")])
         self.assertEqual(self.c.get("/files/j1/R_Resume.pdf", headers=self.ext).data, b"%PDF-1.4 x")

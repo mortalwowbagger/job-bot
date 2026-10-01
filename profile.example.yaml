@@ -101,5 +101,9 @@ extra_facts:
   - Maintained 2 automation test suites at Northwind Bank.
 #  - Cut regression time from X hours to Y minutes.
 
-education: []
-#  - "B.S. ..., University ..., 20XX"
+# Structured entries let the browser extension fill application forms' Education sections.
+education:
+  - school: University of Colorado Boulder
+    degree: B.S.
+    field: Computer Science
+    end_year: "2017"

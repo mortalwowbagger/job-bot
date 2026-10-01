@@ -57,7 +57,8 @@ def resume_html(profile, packet):
             f'<span>{e(j["dates"])}</span></div><div class="job-sub">{e(j.get("location", ""))}</div>'
             f"<ul>{bullets}</ul></div>")
     edu = profile.get("education") or []
-    edu_html = ("<h2>Education</h2>" + "".join(f"<p>{e(x)}</p>" for x in edu)) if edu else ""
+    from .profile import education_line
+    edu_html = ("<h2>Education</h2>" + "".join(f"<p>{e(education_line(x))}</p>" for x in edu)) if edu else ""
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>{CSS}</style></head><body>
 <h1>{e(c['first_name'])} {e(c['last_name'])}</h1><div class="contact">{e(contact)}</div>
 <h2>Summary</h2><p>{e(packet['summary'])}</p>

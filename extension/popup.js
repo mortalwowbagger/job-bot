@@ -68,7 +68,8 @@ async function fill() {
     const files = {};
     if (j.files && j.files.resume) files.resume = await fileB64(j.id, j.files.resume);
     if (j.files && j.files.letter) files.letter = await fileB64(j.id, j.files.letter);
-    const payload = { contact: me.contact, cover_letter: j.cover_letter, files };
+    const payload = { contact: me.contact, cover_letter: j.cover_letter, files,
+                      employment: me.employment || [], education: me.education || [] };
     const target = { tabId: tab.id, allFrames: true };
     let results;
     try {
@@ -79,6 +80,12 @@ async function fill() {
       await chrome.scripting.executeScript({ target: main, files: ["fill.js"] });
       results = await chrome.scripting.executeScript({ target: main, func: (p) => self.jobbotFill(p), args: [payload] });
     }
+    // searchable dropdowns (months, school, degree) need the page's own context
+    try {
+      await chrome.scripting.executeScript({ target, world: "MAIN", files: ["select.js"] });
+      results = results.concat(await chrome.scripting.executeScript({
+        target, world: "MAIN", func: (p) => window.jobbotSelects(p), args: [payload] }));
+    } catch (e) { /* frames we can't reach: text fields and files are already done */ }
     const filled = [...new Set(results.flatMap((r) => (r.result && r.result.filled) || []))];
     const notes = [...new Set(results.flatMap((r) => (r.result && r.result.notes) || []))];
     $("result").hidden = false;

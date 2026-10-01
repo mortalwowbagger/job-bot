@@ -32,7 +32,10 @@ IMPORT_SCHEMA = {
                            "title": {"type": "string"}, "dates": {"type": "string"},
                            "facts": {"type": "array", "items": {"type": "string"}}}}},
         "skills": {"type": "array", "items": {"type": "string"}},
-        "education": {"type": "array", "items": {"type": "string"}},
+        "education": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False,
+            "required": ["school", "degree", "field", "start_year", "end_year"],
+            "properties": {k: {"type": "string"} for k in ("school", "degree", "field", "start_year", "end_year")}}},
         "extra_facts": {"type": "array", "items": {"type": "string"}},
     },
 }
@@ -47,7 +50,8 @@ COPY, DON'T WRITE. Every value must come from the resume text:
 - `summary`: the resume's own summary/objective if it has one, else "".
 - `extra_facts`: any sentence with a specific number or metric not already
   covered by a bullet (e.g. awards, team sizes). Usually empty.
-- `education`: one line per degree/certification as written.
+- `education`: one entry per degree/certification: school, degree (as written, e.g. "B.S."),
+  field of study, start_year and end_year ("" when not given).
 - Missing contact fields are "" - never guess an email, phone or URL.
 Never add, embellish, infer or summarize beyond what the text says. Jobs in the
 order the resume lists them (most recent first)."""
@@ -113,7 +117,8 @@ def import_resume(text, current, model):
                            (draft["experience"][0]["company"] if draft["experience"] else "")},
                "targets": targets, "summary": draft["summary"], "experience": draft["experience"],
                "skills": draft["skills"], "highlights": (current or {}).get("highlights") or [],
-               "extra_facts": draft["extra_facts"], "education": draft["education"]}
+               "extra_facts": draft["extra_facts"],
+               "education": [{k: v for k, v in e.items() if v} for e in draft["education"]]}
     return dump(ordered), unsupported(ordered, text)
 
 
@@ -159,6 +164,11 @@ def validate(profile_yaml):
     for k in ("highlights", "extra_facts", "education"):
         if p.get(k) is not None and not isinstance(p.get(k), list):
             errors.append(f"{k}: must be a list")
+    for i, e in enumerate(p.get("education") or [], 1):
+        if isinstance(e, dict) and not str(e.get("school") or "").strip():
+            errors.append(f"education #{i}: school is required")
+        elif not isinstance(e, (dict, str)):
+            errors.append(f"education #{i}: use a line of text or school/degree/field/end_year")
     return (p if not errors else None), errors
 
 
@@ -169,3 +179,50 @@ DEFAULT_TARGETS = {
     "dealbreakers": ["Requires relocation or on-site / hybrid attendance"],
     "preferences": [],
 }
+
+
+MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september",
+          "october", "november", "december"]
+
+
+def parse_dates(text):
+    """'March 2026 - Present' -> {start_month: 'March', start_year: '2026', current: True, ...}."""
+    parts = re.split(r"\s+(?:-|–|—|to)\s+", (text or "").strip(), maxsplit=1)
+
+    def one(part):
+        m = re.search(r"([A-Za-z]+)\.?\s+(\d{4})", part or "")
+        if m:
+            name = next((x for x in MONTHS if x.startswith(m.group(1).lower()[:3])), None)
+            return (name.title() if name else ""), m.group(2)
+        y = re.search(r"\d{4}", part or "")
+        return "", (y.group(0) if y else "")
+    sm, sy = one(parts[0])
+    end = parts[1] if len(parts) > 1 else ""
+    current = bool(re.search(r"present|current|now", end, re.I))
+    em, ey = ("", "") if current else one(end)
+    return {"start_month": sm, "start_year": sy, "end_month": em, "end_year": ey, "current": current}
+
+
+def employment(profile, n=3):
+    """Most recent jobs with structured dates, for application forms."""
+    return [{"company": e.get("company", ""), "title": e.get("title", ""), "location": e.get("location", ""),
+             **parse_dates(e.get("dates", ""))} for e in (profile.get("experience") or [])[:n]]
+
+
+def education(profile):
+    """Structured entries; plain-text lines are kept as {'text': ...} (forms can't use them)."""
+    out = []
+    for e in profile.get("education") or []:
+        if isinstance(e, dict):
+            out.append({k: str(e.get(k) or "") for k in ("school", "degree", "field", "start_year", "end_year")})
+        elif str(e).strip():
+            out.append({"text": str(e).strip()})
+    return out
+
+
+def education_line(e):
+    """One resume line for an education entry (string or mapping)."""
+    if not isinstance(e, dict):
+        return str(e)
+    deg = " in ".join(x for x in (e.get("degree"), e.get("field")) if x)
+    return ", ".join(str(x) for x in (deg, e.get("school"), e.get("end_year")) if x)

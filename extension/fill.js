@@ -98,6 +98,21 @@
     fill("GitHub", c.github, ["input[name='urls[GitHub]']"], /github/i, /github/i);
     fill("current company", c.current_company, ["input[name=org]"], /^current\s+(company|employer)/i, null);
 
+    // Employment section (Greenhouse ids): the most recent job from the profile.
+    // Dropdowns (months, school, degree) are handled by select.js.
+    const job = (p.employment || [])[0];
+    if (job && document.getElementById("company-name-0")) {
+      fill("employer", job.company, ["#company-name-0"]);
+      fill("job title", job.title, ["#title-0"]);
+      fill("start year", job.start_year, ["#start-date-year-0"]);
+      if (job.current) {
+        const box = document.querySelector("input[type=checkbox][id^=current-role-0]");
+        if (box && !box.checked) { box.click(); done.push("current role"); }
+      } else {
+        fill("end year", job.end_year, ["#end-date-year-0"]);
+      }
+    }
+
     // cover letter as text, where a form asks for it in a box (Lever "additional information" etc.)
     const letterBox = [...document.querySelectorAll("textarea")].filter(visible)
       .find((el) => !el.value && !used.has(el) && (/cover\s*letter/i.test(describe(el)) || el.name === "comments"));
