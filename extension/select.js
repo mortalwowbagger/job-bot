@@ -59,18 +59,21 @@ window.jobbotSelects = async function (p) {
     if (!sel || hasValue(sel)) return false;
     for (const q of queries.filter(Boolean)) {
       const pick = best(await options(sel, q), queries[0], minCover);
-      if (pick) { sel.selectOption(pick); filled.push(what); return true; }
+      if (pick) { sel.selectOption(pick); if (what) filled.push(what); return true; }
     }
     return false;
   }
 
   const byId = (re) => [...document.querySelectorAll("input[role=combobox]")].find((el) => re.test(el.id));
 
-  const job = (p.employment || [])[0];
-  if (job) {
-    if (job.start_month) await choose(byId(/^start-date-month-0$/), "start month", [job.start_month]);
-    if (job.end_month && !job.current) await choose(byId(/^end-date-month-0$/), "end month", [job.end_month]);
+  // month dropdowns for every employment row fill.js filled (row i = profile job i)
+  let months = 0;
+  for (let i = 0; i < (p.employment || []).length; i++) {
+    const job = p.employment[i];
+    if (job.start_month && await choose(byId(new RegExp(`^start-date-month-${i}$`)), null, [job.start_month])) months++;
+    if (job.end_month && !job.current && await choose(byId(new RegExp(`^end-date-month-${i}$`)), null, [job.end_month])) months++;
   }
+  if (months) filled.push(`employment months (${months})`);
 
   const edu = (p.education || []).find((e) => e.school);
   const school = byId(/^school--0$/);

@@ -1,6 +1,7 @@
 // job-bot: fill the application form on this page with the user's packet.
 // Injected by the popup only when the user clicks "Fill this application".
-// Never submits, never navigates, never answers work-authorization, sponsorship,
+// Never submits or navigates (the only thing it clicks is a form's own "Add another"
+// employment row and "Current role" box), never answers work-authorization, sponsorship,
 // salary, EEO or other sensitive questions. Fields that already have a value are left alone.
 (() => {
   const SENSITIVE = /authori[sz]|sponsor|visa|citizen|salary|compensation|pay\s*expect|gender|pronoun|race|ethnic|hispanic|latin|veteran|disab|criminal|background\s*check|date\s*of\s*birth|\bage\b|ssn|social\s*security/i;
@@ -80,9 +81,25 @@
     done.push(what);
   }
 
-  window.jobbotFill = function (p) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function waitFor(id, ms = 3000) {
+    for (let t = 0; t < ms / 100; t++) { if (document.getElementById(id)) return true; await sleep(100); }
+    return false;
+  }
+  // the "Add another" link belonging to this section: the first one after the given field,
+  // as long as no field of a later section (school/degree) sits in between
+  function addAnotherAfter(field) {
+    if (!field) return null;
+    const links = [...document.querySelectorAll("a, button")].filter((b) => /^\s*add another\s*$/i.test(b.innerText || ""));
+    const nextSection = document.querySelector("[id^=school--], [id^=degree--]");
+    return links.find((b) => (field.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+      !(nextSection && (nextSection.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING))) || null;
+  }
+
+  window.jobbotFill = async function (p) {
     done.length = 0;
     used.clear();
+    let rows = 0;
     const c = p.contact || {};
     const full = clean(`${c.first_name || ""} ${c.last_name || ""}`);
 
@@ -98,19 +115,34 @@
     fill("GitHub", c.github, ["input[name='urls[GitHub]']"], /github/i, /github/i);
     fill("current company", c.current_company, ["input[name=org]"], /^current\s+(company|employer)/i, null);
 
-    // Employment section (Greenhouse ids): the most recent job from the profile.
-    // Dropdowns (months, school, degree) are handled by select.js.
-    const job = (p.employment || [])[0];
-    if (job && document.getElementById("company-name-0")) {
-      fill("employer", job.company, ["#company-name-0"]);
-      fill("job title", job.title, ["#title-0"]);
-      fill("start year", job.start_year, ["#start-date-year-0"]);
-      if (job.current) {
-        const box = document.querySelector("input[type=checkbox][id^=current-role-0]");
-        if (box && !box.checked) { box.click(); done.push("current role"); }
-      } else {
-        fill("end year", job.end_year, ["#end-date-year-0"]);
+    // Employment section (Greenhouse ids): every job in the profile, newest first. Extra rows
+    // are added with the section's own "Add another" link. Months are set by select.js.
+    const jobs = (p.employment || []).slice(0, 10);
+    if (jobs.length && document.getElementById("company-name-0")) {
+      for (let i = 0; i < jobs.length; i++) {
+        if (i > 0 && !document.getElementById(`company-name-${i}`)) {
+          const add = addAnotherAfter(document.getElementById(`company-name-${i - 1}`));
+          if (!add) break;
+          add.click();
+          if (!(await waitFor(`company-name-${i}`))) break;
+        }
+        const job = jobs[i];
+        const n = done.length;
+        fill("employer", job.company, [`#company-name-${i}`]);
+        fill("job title", job.title, [`#title-${i}`]);
+        fill("start year", job.start_year, [`#start-date-year-${i}`]);
+        if (job.current) {
+          const box = document.querySelector(`input[type=checkbox][id^=current-role-${i}]`);
+          if (box && !box.checked) { box.click(); done.push("current role"); }
+        } else {
+          fill("end year", job.end_year, [`#end-date-year-${i}`]);
+        }
+        if (done.length > n) rows++;
       }
+      // one summary entry instead of six "employer, job title, ..." repeats
+      const keep = done.filter((d) => !["employer", "job title", "start year", "end year", "current role"].includes(d));
+      done.length = 0; done.push(...keep);
+      if (rows) done.push(`employment (${rows} job${rows > 1 ? "s" : ""})`);
     }
 
     // cover letter as text, where a form asks for it in a box (Lever "additional information" etc.)

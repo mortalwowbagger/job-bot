@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "job-bot",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Fills job applications with your job-bot resume, cover letter and contact details. You review and submit.",
   "action": {
     "default_popup": "popup.html",

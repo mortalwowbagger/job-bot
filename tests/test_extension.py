@@ -147,6 +147,27 @@ class TestEmploymentAndEducation(unittest.TestCase):
         self.assertEqual((v["company-name-0"], v["title-0"], v["start-date-year-0"], v["current-role-0_1"], v["end-date-year-0"]),
                          ("Northwind", "QA Lead", "2026", True, ""))   # current job: no end date
 
+    def test_every_job_gets_a_row_via_add_another(self):
+        html = """<div id=emp><div class=row><input id=company-name-0><input id=title-0><input id=start-date-year-0>
+          <input id=end-date-year-0><input type=checkbox id=current-role-0_1></div>
+          <a href="#" id=addemp onclick="event.preventDefault(); const i = document.querySelectorAll('#emp .row').length;
+            const r = document.createElement('div'); r.className = 'row';
+            r.innerHTML = `<input id=company-name-${i}><input id=title-${i}><input id=start-date-year-${i}><input id=end-date-year-${i}>
+              <input type=checkbox id=current-role-${i}_1>`;
+            setTimeout(() => this.before(r), 50);">Add another</a></div>
+          <div id=edu><input role=combobox id=school--0><a href="#" onclick="window.eduAdded = true">Add another</a></div>"""
+        jobs = [dict(EMPLOYMENT["employment"][0]),
+                {"company": "Contoso", "title": "Automation Engineer", "start_month": "January", "start_year": "2024",
+                 "end_month": "December", "end_year": "2025", "current": False},
+                {"company": "Fabrikam", "title": "QA Engineer", "start_month": "", "start_year": "2017",
+                 "end_month": "", "end_year": "2023", "current": False}]
+        res, x = self.page(html, {**PAYLOAD, "employment": jobs}, "fill.js")
+        v = x["values"]
+        self.assertEqual([v[f"company-name-{i}"] for i in range(3)], ["Northwind", "Contoso", "Fabrikam"])
+        self.assertEqual((v["current-role-0_1"], v["end-date-year-0"], v["current-role-1_1"], v["end-date-year-1"]),
+                         (True, "", False, "2025"))
+        self.assertIn("employment (3 jobs)", res["filled"])
+
     def test_dropdowns_months_school_degree_field(self):
         res, x = self.page(MOCK_SELECTS, EMPLOYMENT, "select.js")
         self.assertEqual(x["picked"], {"start-date-month-0": "March", "school--0": "University of Texas - Austin",

@@ -203,7 +203,7 @@ def parse_dates(text):
     return {"start_month": sm, "start_year": sy, "end_month": em, "end_year": ey, "current": current}
 
 
-def employment(profile, n=3):
+def employment(profile, n=10):
     """Most recent jobs with structured dates, for application forms."""
     return [{"company": e.get("company", ""), "title": e.get("title", ""), "location": e.get("location", ""),
              **parse_dates(e.get("dates", ""))} for e in (profile.get("experience") or [])[:n]]
