@@ -197,6 +197,8 @@ class TestExtensionKeys(unittest.TestCase):
         self.assertEqual((me["contact"]["first_name"], me["contact"]["email"]), ("Alex", "alex.example@example.com"))
         self.assertEqual((me["employment"][0]["company"], me["employment"][0]["current"]), ("Northwind Bank", True))
         self.assertEqual(me["education"][0]["degree"], "B.S.")
+        import json as _j
+        self.assertEqual(me["extension_version"], _j.loads((REPO / "extension" / "manifest.json").read_text())["version"])
         jobs = self.c.get("/api/ext/jobs", headers=self.ext).get_json()
         self.assertEqual([(j["id"], j["files"]["resume"]) for j in jobs], [("j1", "R_Resume.pdf")])
         self.assertEqual(self.c.get("/files/j1/R_Resume.pdf", headers=self.ext).data, b"%PDF-1.4 x")

@@ -116,6 +116,7 @@ async function markApplied() {
 function openSite(settings) { chrome.tabs.create({ url: api + (settings ? "/?settings=1" : "/") }); }
 
 (async () => {
+  $("ver").textContent = "v" + chrome.runtime.getManifest().version;
   [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const st = await chrome.storage.local.get(["token", "api"]);
   token = st.token || null;
@@ -130,6 +131,13 @@ function openSite(settings) { chrome.tabs.create({ url: api + (settings ? "/?set
     me = await (await call("/api/ext/me")).json();
     jobs = await (await call("/api/ext/jobs")).json();
     $("who").textContent = me.email || "";
+    const mine = chrome.runtime.getManifest().version;
+    const newer = (a, b) => { const x = a.split(".").map(Number), y = b.split(".").map(Number);
+      for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
+    if (me.extension_version && newer(me.extension_version, mine)) {
+      $("update").hidden = false; $("newver").textContent = "v" + me.extension_version;
+      $("getupdate").onclick = () => chrome.tabs.create({ url: api + "/job-bot-extension.zip" });
+    }
     show("main");
     if (!jobs.length) { $("jobmeta").textContent = "No prospects yet. Run a search in job-bot."; $("fill").disabled = true; return; }
     renderJobs();

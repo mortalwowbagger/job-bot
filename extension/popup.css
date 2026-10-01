@@ -13,3 +13,7 @@ button:disabled{opacity:.5}
 ol{padding-left:18px}
 @media (prefers-color-scheme:dark){body{background:#181c21;color:#e6e9ed}header{border-color:#2a3037}
  select,button{background:#181c21;color:#e6e9ed;border-color:#2a3037}.result{background:#232931}.meta{color:#9aa3ad}}
+.update{margin:10px 14px 0;padding:8px 10px;background:#fff4e0;border-radius:7px}
+.update button{margin:6px 0}
+#who{margin-left:auto}
+@media (prefers-color-scheme:dark){.update{background:#3a2e14}}

@@ -1,7 +1,10 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><link rel="stylesheet" href="popup.css"></head>
 <body>
-  <header><b>job-bot</b><span id="who" class="meta"></span></header>
+  <header><b>job-bot</b><span id="ver" class="meta"></span><span id="who" class="meta"></span></header>
+  <div id="update" class="update" hidden>A newer job-bot extension (<span id="newver"></span>) is available.
+    <button id="getupdate">Download update</button>
+    <div class="meta">Unzip it over your current job-bot-extension folder, then click ↻ on job-bot in chrome://extensions.</div></div>
   <section id="disconnected" hidden>
     <p>Connect this extension to your job-bot account.</p>
     <ol class="meta"><li>Open job-bot and go to <b>Settings</b>.</li><li>Click <b>Connect browser extension</b>.</li></ol>

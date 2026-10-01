@@ -7,6 +7,7 @@ caches one user's data.
 """
 import hashlib
 import json
+from pathlib import Path
 import os
 import re
 import secrets
@@ -24,6 +25,14 @@ DETAIL_FIELDS = ["company", "title", "location", "url", "applied_at", "contact",
                  "next_step", "follow_up", "notes"]
 STAGE = {"offer": 0, "interview": 1, "applied": 2}
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+def _ext_version():
+    for path in (Path(__file__).parents[2] / "extension" / "manifest.json", Path("extension/manifest.json")):
+        if path.exists():
+            return json.loads(path.read_text()).get("version", "")
+    return ""
+
+
+EXT_VERSION = _ext_version()  # newest extension; the popup offers an update when it's older
 # the only things a browser-extension key may do
 EXT_PATHS = [r"/api/ext/me", r"/api/ext/jobs", r"/files/[^/]+/[^/]+", r"/api/jobs/[^/]+/mark"]
 RUN_STALE = timedelta(minutes=70)  # a "running" flag older than this is a crashed run
@@ -315,7 +324,8 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
         return jsonify(email=g.user.get("email"), contact={k: c.get(k) or "" for k in
                        ("first_name", "last_name", "email", "phone", "location", "linkedin", "github",
                         "current_company")},
-                       employment=prof.employment(p or {}), education=prof.education(p or {}))
+                       employment=prof.employment(p or {}), education=prof.education(p or {}),
+                       extension_version=EXT_VERSION)
 
     @app.get("/api/ext/jobs")
     def ext_jobs():

@@ -1,14 +1,26 @@
 {
   "manifest_version": 3,
   "name": "job-bot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Fills job applications with your job-bot resume, cover letter and contact details. You review and submit.",
   "action": {
     "default_popup": "popup.html",
-    "default_icon": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png" }
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png",
+      "48": "icons/48.png"
+    }
   },
-  "icons": { "16": "icons/16.png", "48": "icons/48.png", "128": "icons/128.png" },
-  "permissions": ["activeTab", "scripting", "storage"],
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
   "host_permissions": [
     "https://job-bot-app.web.app/*",
     "https://job-boards.greenhouse.io/*",
@@ -20,6 +32,14 @@
     "https://*.recruitee.com/*"
   ],
   "content_scripts": [
-    { "matches": ["https://job-bot-app.web.app/*"], "js": ["pair.js"], "run_at": "document_start" }
+    {
+      "matches": [
+        "https://job-bot-app.web.app/*"
+      ],
+      "js": [
+        "pair.js"
+      ],
+      "run_at": "document_start"
+    }
   ]
 }

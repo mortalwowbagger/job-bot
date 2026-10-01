@@ -8,5 +8,6 @@ COPY requirements.txt requirements-cloud.txt ./
 RUN pip install -r requirements.txt -r requirements-cloud.txt
 COPY jobbot jobbot
 COPY config.yaml .
+COPY extension/manifest.json extension/manifest.json
 # web service (Cloud Run sets $PORT); the run job overrides this with `python -m jobbot.cloud.pipeline`
 CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 120 "jobbot.cloud.webapp:make_app()"
