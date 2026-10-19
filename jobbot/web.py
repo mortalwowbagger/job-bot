@@ -93,7 +93,7 @@ def _packet(job):
 def _summary(r):
     return {k: r[k] for k in ("id", "company", "title", "location", "score", "status", "source",
                               "applied_at", "notes", "url", "contact", "salary", "next_step",
-                              "follow_up")} | {"form_url": form_url(dict(r))}
+                              "follow_up", "posted_at", "created_at")} | {"form_url": form_url(dict(r))}
 
 
 def create_app(root):
@@ -135,7 +135,13 @@ def create_app(root):
 
     @app.get("/api/jobs")
     def jobs():
-        where, order = VIEWS.get(request.args.get("view", "review"), VIEWS["review"])
+        view = request.args.get("view", "review")
+        where, order = VIEWS.get(view, VIEWS["review"])
+        sort = request.args.get("sort", "newest")
+        if view in ("review", "near") and sort == "newest":
+            order = "COALESCE(posted_at, substr(created_at, 1, 10)) DESC, score DESC"
+        elif view in ("review", "near") and sort == "found":
+            order = "substr(created_at, 1, 10) DESC, score DESC"
         c = con()
         rows = c.execute(f"SELECT * FROM jobs WHERE {where} ORDER BY {order} LIMIT 300").fetchall()
         out = []

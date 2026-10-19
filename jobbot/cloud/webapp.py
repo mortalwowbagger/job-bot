@@ -46,11 +46,16 @@ def summary(j):
     j = dict(j)
     return {k: j.get(k) for k in ("id", "company", "title", "location", "score", "status", "source",
                                   "applied_at", "notes", "url", "contact", "salary", "next_step",
-                                  "follow_up")} | {"form_url": form_url(j) if (j.get("apply_url") or j.get("url")) else "",
+                                  "follow_up", "posted_at", "created_at", "closed_at")} | {"form_url": form_url(j) if (j.get("apply_url") or j.get("url")) else "",
                                                    "warnings": len(j.get("warnings") or [])}
 
 
-def view_jobs(store, uid, view):
+def newest(r):
+    """Sort key: the source's posting date, else when job-bot found it."""
+    return (r.get("posted_at") or (r.get("created_at") or "")[:10], r.get("created_at") or "")
+
+
+def view_jobs(store, uid, view, sort="newest"):
     if view == "pipeline":
         rows = store.jobs(uid, APPLICATION)
         rows.sort(key=lambda r: r.get("applied_at") or r.get("updated_at") or "", reverse=True)
@@ -58,10 +63,20 @@ def view_jobs(store, uid, view):
     elif view == "near":
         rows = [r for r in store.jobs(uid, ["low_score"]) if (r.get("score") or 0) >= 50]
         rows.sort(key=lambda r: -(r.get("score") or 0))
+        if sort == "newest":
+            rows.sort(key=newest, reverse=True)
+        elif sort == "found":
+            rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+    elif view == "closed":
+        rows = sorted(store.jobs(uid, ["closed"]), key=lambda r: r.get("closed_at") or "", reverse=True)
     elif view == "skipped":
         rows = sorted(store.jobs(uid, ["skipped"]), key=lambda r: r.get("updated_at") or "", reverse=True)
     else:
         rows = sorted(store.jobs(uid, ["tailored"]), key=lambda r: -(r.get("score") or 0))
+        if sort == "newest":  # stable sort: same day -> best match first
+            rows.sort(key=newest, reverse=True)
+        elif sort == "found":  # when job-bot discovered it
+            rows.sort(key=lambda r: (r.get("created_at") or "")[:10], reverse=True)
     return [summary(r) for r in rows[:300]]
 
 
@@ -216,7 +231,7 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
 
     @app.get("/api/jobs")
     def jobs():
-        return jsonify(view_jobs(store, g.uid, request.args.get("view", "review")))
+        return jsonify(view_jobs(store, g.uid, request.args.get("view", "review"), request.args.get("sort", "newest")))
 
     @app.get("/api/jobs/<jid>")
     def job(jid):

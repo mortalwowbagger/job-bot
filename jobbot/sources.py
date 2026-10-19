@@ -27,6 +27,21 @@ def strip_html(s):
     return re.sub(r"\n\s*\n+", "\n\n", s).strip()
 
 
+def when(value):
+    """Posting date as YYYY-MM-DD from unix seconds/ms or ISO strings; '' if unknown."""
+    from datetime import datetime, timezone
+    if value in (None, ""):
+        return ""
+    try:
+        n = float(value)
+        if n > 1e11:  # milliseconds
+            n /= 1000
+        return datetime.fromtimestamp(n, tz=timezone.utc).strftime("%Y-%m-%d")
+    except (TypeError, ValueError):
+        m = re.match(r"(\d{4}-\d{2}-\d{2})", str(value))
+        return m.group(1) if m else ""
+
+
 def _get(url, **params):
     r = requests.get(url, params=params or None, headers=UA, timeout=TIMEOUT)
     r.raise_for_status()
@@ -39,7 +54,7 @@ def parse_greenhouse(slug, data):
     for j in data.get("jobs", []):
         loc = (j.get("location") or {}).get("name", "")
         yield dict(
-            source="greenhouse", ext_id=str(j["id"]),
+            source="greenhouse", ext_id=str(j["id"]), posted_at=when(j.get("first_published") or j.get("updated_at")),
             company=j.get("company_name") or slug, board=slug,
             title=j.get("title", ""), location=loc,
             remote_hint="remote" in loc.lower(),
@@ -59,7 +74,7 @@ def parse_lever(slug, data):
             parts.append(lst.get("text", "") + "\n" + strip_html(lst.get("content", "")))
         parts.append(j.get("additionalPlain", ""))
         yield dict(
-            source="lever", ext_id=j["id"], company=slug, board=slug,
+            source="lever", ext_id=j["id"], company=slug, board=slug, posted_at=when(j.get("createdAt")),
             title=j.get("text", ""), location=loc,
             remote_hint=(j.get("workplaceType") == "remote") or "remote" in loc.lower(),
             url=j.get("hostedUrl", ""),
@@ -75,7 +90,7 @@ def parse_ashby(slug, data):
         loc = j.get("location", "") or ""
         wt = (j.get("workplaceType") or "").lower()
         yield dict(
-            source="ashby", ext_id=j["id"], company=slug, board=slug,
+            source="ashby", ext_id=j["id"], company=slug, board=slug, posted_at=when(j.get("publishedAt")),
             title=j.get("title", ""), location=loc,
             remote_hint=bool(j.get("isRemote")) or wt == "remote" or "remote" in loc.lower(),
             url=j.get("jobUrl", ""),
@@ -88,7 +103,7 @@ def parse_remotive(data):
     for j in data.get("jobs", []):
         loc = j.get("candidate_required_location", "") or ""
         yield dict(
-            source="remotive", ext_id=str(j["id"]),
+            source="remotive", ext_id=str(j["id"]), posted_at=when(j.get("publication_date")),
             company=j.get("company_name", ""), board="remotive",
             title=j.get("title", ""), location=f"Remote ({loc})" if loc else "Remote",
             remote_hint=True, url=j.get("url", ""), apply_url=j.get("url", ""),
@@ -100,7 +115,7 @@ def parse_himalayas(data):
     for j in data.get("jobs", []):
         where = ", ".join(j.get("locationRestrictions") or []) or "Worldwide"
         yield dict(
-            source="himalayas", ext_id=j.get("guid") or j.get("applicationLink"), board="himalayas",
+            source="himalayas", ext_id=j.get("guid") or j.get("applicationLink"), board="himalayas", posted_at=when(j.get("pubDate")),
             company=j.get("companyName", ""), title=j.get("title", ""), location=f"Remote ({where})",
             remote_hint=True, url=j.get("guid") or j.get("applicationLink", ""),
             apply_url=j.get("applicationLink") or j.get("guid", ""),
@@ -111,7 +126,7 @@ def parse_himalayas(data):
 def parse_jobicy(data):
     for j in data.get("jobs", []):
         yield dict(
-            source="jobicy", ext_id=str(j["id"]), board="jobicy", company=j.get("companyName", ""),
+            source="jobicy", ext_id=str(j["id"]), board="jobicy", company=j.get("companyName", ""), posted_at=when(j.get("pubDate")),
             title=html.unescape(j.get("jobTitle", "")), location=f"Remote ({j.get('jobGeo') or 'Anywhere'})",
             remote_hint=True, url=j.get("url", ""), apply_url=j.get("url", ""),
             description=strip_html(j.get("jobDescription", "")),
@@ -125,7 +140,7 @@ def parse_smartrecruiters(slug, data):
         remote = bool(loc.get("remote"))
         url = f"https://jobs.smartrecruiters.com/{slug}/{j['id']}"
         yield dict(
-            source="smartrecruiters", ext_id=str(j["id"]), board=slug,
+            source="smartrecruiters", ext_id=str(j["id"]), board=slug, posted_at=when(j.get("releasedDate")),
             company=(j.get("company") or {}).get("name") or slug, title=j.get("name", ""),
             location=("Remote - " if remote else "") + where, remote_hint=remote,
             url=url, apply_url=url, description="", detail_url=j.get("ref", ""),
@@ -138,7 +153,7 @@ def parse_workable(slug, data):
         where = ", ".join(x for x in (j.get("city"), j.get("state"), j.get("country")) if x)
         remote = str(j.get("telecommuting")).lower() == "true"
         yield dict(
-            source="workable", ext_id=j.get("shortcode") or j.get("url"), board=slug, company=company,
+            source="workable", ext_id=j.get("shortcode") or j.get("url"), board=slug, company=company, posted_at=when(j.get("published_on") or j.get("created_at")),
             title=j.get("title", ""), location=("Remote - " if remote else "") + where, remote_hint=remote,
             url=j.get("url", ""), apply_url=j.get("application_url") or j.get("url", ""),
             description=strip_html(j.get("description", "")),
@@ -152,7 +167,7 @@ def parse_recruitee(slug, data):
         if remote and "remote" not in loc.lower():
             loc = f"Remote - {loc}" if loc else "Remote"
         yield dict(
-            source="recruitee", ext_id=str(j["id"]), board=slug, company=j.get("company_name") or slug,
+            source="recruitee", ext_id=str(j["id"]), board=slug, company=j.get("company_name") or slug, posted_at=when(j.get("published_at") or j.get("created_at")),
             title=j.get("title", ""), location=loc, remote_hint=remote,
             url=j.get("careers_url", ""), apply_url=j.get("careers_apply_url") or j.get("careers_url", ""),
             description=strip_html((j.get("description") or "") + "\n" + (j.get("requirements") or "")),
@@ -164,7 +179,7 @@ def parse_muse(data):
         locs = [l.get("name", "") for l in j.get("locations") or []]
         url = (j.get("refs") or {}).get("landing_page", "")
         yield dict(
-            source="muse", ext_id=str(j["id"]), board="muse", company=(j.get("company") or {}).get("name", ""),
+            source="muse", ext_id=str(j["id"]), board="muse", company=(j.get("company") or {}).get("name", ""), posted_at=when(j.get("publication_date")),
             title=j.get("name", ""), location="; ".join(locs),
             remote_hint=any("remote" in l.lower() for l in locs), url=url, apply_url=url,
             description=strip_html(j.get("contents", "")),
@@ -177,7 +192,7 @@ def parse_adzuna(data, remote_query=False):
         if remote_query:  # matched "remote" somewhere in the listing; say so rather than assume fully remote
             loc = f"{loc} (listing mentions remote)" if loc else "Listing mentions remote"
         yield dict(
-            source="adzuna", ext_id=str(j["id"]), board="adzuna", company=(j.get("company") or {}).get("display_name", ""),
+            source="adzuna", ext_id=str(j["id"]), board="adzuna", company=(j.get("company") or {}).get("display_name", ""), posted_at=when(j.get("created")),
             title=strip_html(j.get("title", "")), location=loc, remote_hint=False,
             url=j.get("redirect_url", ""), apply_url=j.get("redirect_url", ""),
             # Adzuna's API only returns a ~500-character snippet

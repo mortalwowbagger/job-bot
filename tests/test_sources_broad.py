@@ -178,7 +178,7 @@ class TestQueueRules(unittest.TestCase):
                 "url": "u", "apply_url": "u", "description": "Appium Playwright"}
 
     def run_user(self, passing, cfg):
-        with mock.patch.dict(os.environ, {"JOBBOT_FAKE_LLM": "1"}):
+        with mock.patch.dict(os.environ, {"JOBBOT_FAKE_LLM": "1"}), mock.patch("jobbot.liveness.check", lambda j: (None, "")):
             pipeline.run_user(self.store, cfg, "u", PROFILE, passing, None, self.prog)
 
     def test_duplicates_across_sources_are_stored_once(self):
@@ -203,3 +203,68 @@ class TestQueueRules(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestLiveness(unittest.TestCase):
+    """Closed only on a definite signal; anything unclear keeps the job."""
+
+    def resp(self, code, body=None):
+        r = mock.Mock(status_code=code)
+        r.json.return_value = body or {}
+        return r
+
+    def test_status_codes(self):
+        from jobbot import liveness
+        gh = {"source": "greenhouse", "board": "acme", "ext_id": "1"}
+        cases = [(self.resp(200, {"first_published": "2026-10-01T00:00:00Z"}), ("open", "2026-10-01")),
+                 (self.resp(404), ("closed", "")), (self.resp(403), (None, "")), (self.resp(500), (None, ""))]
+        for r, want in cases:
+            with mock.patch.object(liveness.requests, "get", return_value=r):
+                self.assertEqual(liveness.check(gh), want)
+        with mock.patch.object(liveness.requests, "get", side_effect=liveness.requests.ConnectionError()):
+            self.assertEqual(liveness.check(gh), (None, ""))
+        with mock.patch.object(liveness.requests, "get", return_value=self.resp(410)):
+            self.assertEqual(liveness.check({"source": "jobicy", "url": "https://jobicy.com/jobs/1-x"}), ("closed", ""))
+
+    def test_himalayas_membership(self):
+        from jobbot import liveness
+        liveness.reset_cache()
+        live = {"jobs": [{"guid": "https://himalayas.app/companies/acme/jobs/qa", "title": "QA", "companyName": "Acme",
+                          "pubDate": 1789749595}]}
+        with mock.patch.object(liveness.requests, "get", return_value=self.resp(200, live)), mock.patch("time.sleep"):
+            ok = liveness.check({"source": "himalayas", "ext_id": "https://himalayas.app/companies/acme/jobs/qa",
+                                 "url": "https://himalayas.app/companies/acme/jobs/qa"})
+            gone = liveness.check({"source": "himalayas", "ext_id": "https://himalayas.app/companies/acme/jobs/old",
+                                   "url": "https://himalayas.app/companies/acme/jobs/old"})
+        self.assertEqual((ok, gone), (("open", "2026-09-18"), ("closed", "")))
+
+    def test_adzuna_closed_only_when_every_match_was_seen(self):
+        from jobbot import liveness
+        liveness.reset_cache()
+        job = {"source": "adzuna", "ext_id": "5", "title": "QA Lead", "company": "Eta"}
+        env = {"ADZUNA_APP_ID": "i", "ADZUNA_APP_KEY": "k"}
+        with mock.patch.dict(os.environ, env), mock.patch("time.sleep"):
+            for body, want in [({"count": 1, "results": [{"id": 5, "created": "2026-10-02T00:00:00Z"}]}, ("open", "2026-10-02")),
+                               ({"count": 2, "results": [{"id": 7}, {"id": 8}]}, ("closed", "")),
+                               ({"count": 300, "results": [{"id": 7}]}, (None, ""))]:
+                with mock.patch.object(liveness.requests, "get", return_value=self.resp(200, body)):
+                    self.assertEqual(liveness.check(job), want)
+
+    def test_refresh_moves_closed_jobs_out_of_the_queue(self):
+        from jobbot import liveness
+        store = MemoryStore()
+        for i in range(3):
+            store.put_job("u", f"j{i}", {"status": "tailored", "source": "greenhouse", "company": "A", "title": "QA"})
+        verdict = {"j0": ("closed", ""), "j1": ("open", "2026-10-01"), "j2": (None, "")}
+        with mock.patch.object(liveness, "check", lambda j: verdict[j["id"]]):
+            checked, closed = pipeline.refresh_queue(store, "u", log=lambda *_: None)
+        self.assertEqual((checked, closed), (3, 1))
+        self.assertEqual([store.get_job("u", f"j{i}")["status"] for i in range(3)], ["closed", "tailored", "tailored"])
+        self.assertEqual(store.get_job("u", "j1")["posted_at"], "2026-10-01")
+        self.assertIn("Posting closed", store.events("u", "j0")[-1]["text"])
+        with mock.patch.object(liveness, "check", lambda j: self.fail("re-checked too soon")):
+            self.assertEqual(pipeline.refresh_queue(store, "u", log=lambda *_: None), (0, 0))   # checked < 2 days ago
+
+    def test_every_source_reports_a_posting_date(self):
+        self.assertEqual(list(sources.parse_himalayas(HIMALAYAS | {"jobs": [HIMALAYAS["jobs"][0] | {"pubDate": 1789749595}]}))[0]["posted_at"], "2026-09-18")
+        self.assertEqual(list(sources.parse_muse({"results": [MUSE["results"][0] | {"publication_date": "2026-10-03T12:00:00Z"}]}))[0]["posted_at"], "2026-10-03")

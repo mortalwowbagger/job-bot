@@ -51,6 +51,7 @@ main{display:grid;grid-template-columns:minmax(320px,440px) 1fr;min-height:calc(
 .tabs{display:flex;gap:4px;padding:10px;border-bottom:1px solid var(--line);overflow-x:auto}
 .tabs button{border:none;background:none;color:var(--muted)}
 .tabs button.on{background:var(--chip);color:var(--ink);font-weight:600}
+#sortsel{margin-left:auto;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);padding:4px 6px}
 .row{padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;display:grid;grid-template-columns:44px 1fr;gap:10px}
 .row:hover{background:var(--chip)} .row.sel{background:var(--chip);box-shadow:inset 3px 0 var(--accent)}
 .score{font-weight:700;font-size:15px;text-align:center;border-radius:7px;padding:6px 0;background:var(--chip);align-self:start}
@@ -86,7 +87,7 @@ ul.plain{margin:0;padding-left:18px} ul.plain li{margin:3px 0}
 .grid label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
 .grid input,.grid textarea,.grid select{font:inherit;font-size:16px;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 9px;min-width:0}
 .timeline{border-left:2px solid var(--line);margin:4px 0 8px 6px;padding-left:14px}
-.ev{margin:6px 0}.due{color:var(--bad);font-weight:600}
+.ev{margin:6px 0}.due{color:var(--bad);font-weight:600}.old{color:var(--warn)}
 dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);width:min(640px,94vw);padding:20px 22px;max-height:90vh;overflow:auto}
 dialog::backdrop{background:rgba(0,0,0,.35)}
 dialog.wide{width:min(900px,96vw)}
@@ -254,7 +255,9 @@ body.is-hosted .hosted{display:inline-flex} body.is-admin .admin{display:inline-
 <script>
 const CFG=__CFG__;
 const TABS=[["review","To review"],["pipeline","Applied"],["near","Near misses"],["skipped","Skipped"]];
+if(CFG.hosted)TABS.push(["closed","Closed"]);
 const MARKS=[["applied","Applied"],["interview","Interview"],["offer","Offer"],["rejected","Rejected"],["withdrawn","Withdrawn"],["skipped","Skip"],["tailored","Back to review"]];
+let sortBy=(()=>{try{return localStorage.getItem("jobbot-sort")||"newest"}catch(e){return "newest"}})();
 let view="review", sel=null, cur=null, wasRunning=false, wasApplying=false, getToken=async()=>null;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -263,6 +266,9 @@ const VIA={himalayas:"via Himalayas",jobicy:"via Jobicy",remotive:"via Remotive"
 const srcLabel=s=>VIA[s]||s;
 const today=()=>new Date().toLocaleDateString("en-CA");
 const ago=d=>{if(!d)return"";const n=Math.round((new Date(today())-new Date(d.slice(0,10)))/864e5);return n<=0?"today":n==1?"1d ago":n+"d ago"};
+// "Posted 5d ago" (source's date) or "Found 19d ago" (when job-bot first saw it); old ones flagged
+function age(j){const d=j.posted_at||j.created_at;if(!d)return"";const t=ago(d);const days=Math.round((new Date(today())-new Date(d.slice(0,10)))/864e5);
+  return `<span class="${days>30?"old":""}">${j.posted_at?"Posted":"Found"} ${t}</span>`}
 const fmt=d=>d?new Date(d.slice(0,10)+"T12:00").toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}):"";
 const phone=()=>matchMedia("(max-width:800px)").matches;
 
@@ -278,18 +284,21 @@ async function openFile(id,n){ // hosted: fetch with the token, then open (windo
   if(!CFG.hosted){window.open(fileUrl(id,n),"_blank");return}
   const w=window.open("","_blank");try{const u=await fileBlobUrl(id,n);if(w)w.location=u;else location.href=u}catch(e){if(w)w.close();alertBar(e.message)}}
 
-function renderTabs(){$("tabs").innerHTML=TABS.map(([k,l])=>`<button class="${k==view?"on":""}" data-view="${k}">${l}</button>`).join("")}
-$("tabs").onclick=e=>{const b=e.target.closest("button");if(b)setView(b.dataset.view)};
+function renderTabs(){$("tabs").innerHTML=TABS.map(([k,l])=>`<button class="${k==view?"on":""}" data-view="${k}">${l}</button>`).join("")+
+  (["review","near"].includes(view)?`<select id="sortsel" aria-label="Sort" onchange="setSort(this.value)">
+    ${[["newest","Newest posting"],["found","Recently found"],["score","Best match"]].map(([v,l])=>`<option value="${v}"${sortBy==v?" selected":""}>${l}</option>`).join("")}</select>`:"")}
+function setSort(v){sortBy=v;try{localStorage.setItem("jobbot-sort",v)}catch(e){}loadList()}
+$("tabs").onclick=e=>{const b=e.target.closest("button[data-view]");if(b)setView(b.dataset.view)};
 function setView(v){view=v;sel=null;document.body.classList.remove("showdetail");renderTabs();loadList();$("detail").innerHTML='<div class="empty">Select a prospect.</div>'}
 function appLink(j,small){if(!j.form_url)return"";return `<a class="btn ${small?"":"primary"}" href="${esc(j.form_url)}" target="_blank" rel="noopener">Open application ↗</a>`}
 
 async function loadList(){
-  const jobs=await api("/api/jobs?view="+view);
+  const jobs=await api("/api/jobs?view="+view+"&sort="+sortBy);
   if(!jobs.length){$("list").innerHTML=`<div class="empty">${view=="review"?"No packets waiting. Run a job search.":"Nothing here yet."}</div>`;return}
   $("list").innerHTML=jobs.map(j=>`<div class="row ${j.id==sel?"sel":""}" data-id="${esc(j.id)}">
     <div class="score ${scls(j.score)}">${j.score??"–"}</div>
     <div><div class="co">${esc(j.company)}<span class="tag">${esc(srcLabel(j.source))}</span>${j.warnings?`<span class="tag w">${j.warnings} to check</span>`:""}${view!="review"?`<span class="tag">${esc(j.status)}</span>`:""}</div>
-    <div class="ti">${esc(j.title)}</div><div class="meta">${CFG.hosted?"":"#"+esc(j.id)+" · "}${esc(j.location)}${j.applied_at?` · applied ${fmt(j.applied_at)} (${ago(j.applied_at)})`:""}</div>
+    <div class="ti">${esc(j.title)}</div><div class="meta">${CFG.hosted?"":"#"+esc(j.id)+" · "}${j.status=="closed"?`<b>Closed ${fmt(j.closed_at)}</b> · `:""}${!j.applied_at&&j.status!="closed"?age(j)+" · ":""}${esc(j.location)}${j.applied_at?` · applied ${fmt(j.applied_at)} (${ago(j.applied_at)})`:""}</div>
     ${j.next_step?`<div class="meta">Next: ${esc(j.next_step)}</div>`:""}
     ${j.follow_up&&["applied","interview","offer"].includes(j.status)?`<div class="meta ${j.follow_up<=today()?"due":""}">Follow up ${fmt(j.follow_up)}${j.follow_up<=today()?" — due":""}</div>`:""}
     <div class="rowact">${appLink(j,true)}</div></div></div>`).join("");
@@ -306,12 +315,13 @@ async function openJob(id){
   <button class="back" onclick="back()">← Back</button>
   <div class="dh"><div class="score ${scls(j.score)}">${j.score??"–"}</div>
     <div><h2>${esc(j.title)}</h2><div>${esc(j.company)}${j.location?" · "+esc(j.location):""}</div>
-    <div class="meta">${CFG.hosted?"":"#"+esc(j.id)+" · "}${esc(srcLabel(j.source))} · status: <b>${esc(j.status)}</b>${j.applied_at?` · applied ${fmt(j.applied_at)} (${ago(j.applied_at)})`:""}</div></div></div>
+    <div class="meta">${CFG.hosted?"":"#"+esc(j.id)+" · "}${esc(srcLabel(j.source))} · ${age(j)} · status: <b>${esc(j.status)}</b>${j.applied_at?` · applied ${fmt(j.applied_at)} (${ago(j.applied_at)})`:""}</div></div></div>
   <div class="actions">${appLink(j)}
     ${j.url&&j.url!=j.form_url?`<a class="btn" href="${esc(j.url)}" target="_blank" rel="noopener">Job posting ↗</a>`:""}
     ${j.has_packet&&!CFG.hosted?`<button onclick="prefill()">Pre-fill in automated browser</button>`:""}
     ${f.resume?`<button onclick="openFile(cur.id,cur.files.resume)">Resume PDF</button>`:""}
     ${f.letter?`<button onclick="openFile(cur.id,cur.files.letter)">Cover letter PDF</button>`:""}</div>
+  ${j.status=="closed"?`<div class="callout">This posting was closed or taken down by ${fmt(j.closed_at)}. It's kept here for your records.</div>`:""}
   ${j.source=="ashby"&&j.has_packet?`<div class="callout">Ashby's spam filter can reject submissions from an automated browser. Use <b>Open application</b> in your normal browser and upload the PDFs from this packet.</div>`:""}
   <div class="marks"><span class="meta">Mark as:</span>${MARKS.filter(([s])=>s!="tailored"||j.has_packet).map(([s,l])=>`<button class="${j.status==s?"cur":""}" onclick="mark('${s}')">${l}</button>`).join("")}</div>
   ${j.warnings.length?`<h3>Check before submitting</h3><div class="checks">${j.warnings.map(w=>`<label><input type="checkbox"> <span>${esc(w)}</span></label>`).join("")}</div>`:""}

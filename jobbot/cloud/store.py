@@ -17,7 +17,7 @@ import re
 from datetime import datetime
 
 JOB_FIELDS = ["source", "ext_id", "board", "company", "title", "location", "url", "apply_url",
-              "description", "remote_hint"]
+              "description", "remote_hint", "posted_at"]
 
 
 def now():

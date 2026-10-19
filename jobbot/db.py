@@ -32,14 +32,15 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS events_job ON events(job_id);
 """
 # columns added after the first release; connect() adds them to older databases
-EXTRA_COLS = {"contact": "TEXT", "salary": "TEXT", "next_step": "TEXT", "follow_up": "TEXT"}
+EXTRA_COLS = {"contact": "TEXT", "salary": "TEXT", "next_step": "TEXT", "follow_up": "TEXT",
+              "posted_at": "TEXT"}
 DETAIL_FIELDS = ["company", "title", "location", "url", "applied_at", "contact", "salary",
                  "next_step", "follow_up"]
 APPLICATION_STATUSES = ["applied", "interview", "offer", "rejected", "withdrawn"]
 TRACKED = set(APPLICATION_STATUSES) | {"skipped", "tailored"}
 
 FIELDS = ["source", "ext_id", "board", "company", "title", "location", "url",
-          "apply_url", "description", "remote_hint"]
+          "apply_url", "description", "remote_hint", "posted_at"]
 
 
 def now():

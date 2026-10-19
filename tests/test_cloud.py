@@ -46,7 +46,8 @@ def fake_chromium():
 class TestPipeline(unittest.TestCase):
     def run_once(self, store, uids=None):
         with mock.patch.dict(os.environ, {"JOBBOT_FAKE_LLM": "1"}), \
-             mock.patch.object(sources, "iter_all", lambda c, log=print, **kw: iter(fake_jobs())):
+             mock.patch.object(sources, "iter_all", lambda c, log=print, **kw: iter(fake_jobs())), \
+             mock.patch("jobbot.liveness.check", lambda j: (None, "")):   # offline: "can't tell"
             pipeline.run(store, CFG, uids=uids, browser_factory=fake_chromium)
 
     def owner(self, store, uid="u1", **extra):
@@ -190,6 +191,20 @@ class TestWebapp(unittest.TestCase):
         self.assertEqual([e["text"] for e in d["events"]], ["applied", "screen booked"])
         s = self.c.get("/api/state", headers=self.h).get_json()
         self.assertEqual((s["counts"], s["follow_ups_due"]), ({"applied": 1}, 1))
+
+    def test_review_queue_newest_first_or_best_match(self):
+        self.store.put_job("u1", "old", {"status": "tailored", "score": 95, "company": "A", "title": "Old",
+                                         "posted_at": "2026-09-01"})
+        self.store.put_job("u1", "fresh", {"status": "tailored", "score": 71, "company": "B", "title": "Fresh",
+                                           "posted_at": "2026-10-18"})
+        ids = lambda q: [r["id"] for r in self.c.get("/api/jobs?view=review" + q, headers=self.h).get_json()]
+        order = lambda q: [i for i in ids(q) if i in ("fresh", "old")]
+        self.assertEqual(order(""), ["fresh", "old"])              # default: newest posting first
+        self.assertEqual(order("&sort=score"), ["old", "fresh"])   # best match
+        self.store.jobsd[("u1", "old")]["created_at"] = "2026-10-19T08:00:00"     # found today, posted long ago
+        self.store.jobsd[("u1", "fresh")]["created_at"] = "2026-10-18T08:00:00"
+        self.assertEqual(order("&sort=found"), ["old", "fresh"])   # recently discovered first
+        self.assertIn("posted_at", self.c.get("/api/jobs?view=review", headers=self.h).get_json()[0])
 
     def test_users_only_see_their_own_data(self):
         self.store.put_job("u2", "secret", {"status": "tailored", "company": "X", "title": "Y"})

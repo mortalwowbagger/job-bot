@@ -20,7 +20,7 @@ import yaml
 
 from datetime import datetime, timedelta
 
-from .. import filters, llm, rank, settings, sources
+from .. import filters, liveness, llm, rank, settings, sources
 from ..llm import FatalLLMError
 from .store import JOB_FIELDS, job_id, now
 
@@ -79,6 +79,29 @@ def extra_fetches(users, cfg, max_queries=60, max_adzuna=40, max_muse_cities=10)
                     add(muse, city.title().rsplit(",", 1)[0] + "," + city.rsplit(",", 1)[1].upper())
     return (extra + [("himalayas", q) for q in queries[:max_queries]]
             + [("adzuna", q) for q in adzuna[:max_adzuna]] + [("muse", c) for c in muse[:max_muse_cities]])
+
+
+def refresh_queue(store, uid, log=print, every_days=2, cap=250, statuses=("tailored", "new", "scored")):
+    """Re-check queued postings; closed ones leave the queue (status 'closed', kept in a Closed tab).
+    Also records posting dates. Returns (checked, closed)."""
+    cutoff = (datetime.now() - timedelta(days=every_days)).isoformat()
+    due = [j for j in store.jobs(uid, list(statuses)) if (j.get("checked_at") or "") < cutoff][:cap]
+    if not due:
+        return 0, 0
+    today, closed = now(), 0
+    for job, state, posted in liveness.check_many(due):
+        fields = {"checked_at": today}
+        if posted and not job.get("posted_at"):
+            fields["posted_at"] = posted
+        if state == "closed":
+            fields.update(status="closed", closed_at=today)
+            closed += 1
+        store.update_job(uid, job["id"], **fields)
+        if state == "closed":
+            store.add_event(uid, job["id"], "status", "closed")
+            store.add_event(uid, job["id"], "note", f"Posting closed (checked {today[:10]})")
+    log(f"Checked {len(due)} queued postings: {closed} closed and removed from your queue")
+    return len(due), closed
 
 
 def user_cfg(cfg, user):
@@ -177,6 +200,7 @@ def run(store, cfg, uids=None, browser_factory=None):
     broadcast(f"Fetched {len(jobs)} listings", force=True)
 
     factory = browser_factory or _chromium
+    liveness.reset_cache()
     with factory() as browser:
         for uid, udata in users:
             prog = progs[uid]
@@ -234,6 +258,10 @@ def run_user(store, cfg, uid, profile, passing, browser, prog, cost=None):
             prog.log(f"  (no description for {j['company']}: {type(e).__name__})")
         store.put_job(uid, jid, {**{k: j.get(k) for k in JOB_FIELDS}, "status": "new"})
     prog.log(f"New for you: {len(new_ids)}", force=True)
+    try:  # don't spend money scoring postings that have closed
+        refresh_queue(store, uid, log=prog.log)
+    except Exception as e:  # noqa: BLE001 - checking is best-effort
+        prog.log(f"  (couldn't check for closed postings: {type(e).__name__})")
 
     # stale queue: postings still unscored after N days are probably filled
     cutoff = (datetime.now() - timedelta(days=cloud.get("expire_unscored_days", 14))).isoformat()
