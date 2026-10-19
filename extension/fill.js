@@ -17,7 +17,22 @@
     if (el.getAttribute("aria-label")) parts.push(el.getAttribute("aria-label"));
     const by = el.getAttribute("aria-labelledby");
     if (by) for (const id of by.split(/\s+/)) { const n = document.getElementById(id); if (n) parts.push(n.innerText); }
-    return clean(parts.join(" ").replace(/[*✱]/g, ""));
+    if (!clean(parts.join(""))) parts.push(nearbyLabel(el));
+    return clean(parts.join(" ").replace(/[*✱]/g, "").replace(/\s*:\s*$/, ""));
+  }
+
+  // Forms whose <label>s aren't tied to their inputs: use the label (or short text) just before the input
+  function nearbyLabel(el) {
+    let node = el;
+    for (let depth = 0; depth < 3 && node; depth++, node = node.parentElement) {
+      for (let sib = node.previousElementSibling; sib; sib = sib.previousElementSibling) {
+        if (sib.matches("input, textarea, select") || sib.querySelector("input, textarea, select")) return "";
+        const text = clean(sib.innerText);
+        if (text && text.length <= 80) return text;
+        if (text) return "";
+      }
+    }
+    return "";
   }
   // label plus attributes, for matching
   const describe = (el) => clean([labelText(el), el.placeholder, el.name, el.id, el.getAttribute("autocomplete")].join(" "));

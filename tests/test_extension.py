@@ -190,6 +190,23 @@ ADDRESS = """<label>Street address<input id=street></label><label>City<input id=
 <label>Location<input id=gh role=combobox></label>"""
 
 
+UNLINKED = """<div class=form-group><label>Full Name: *</label><input id=field1 name=990639></div>
+<div class=form-group><label>Email: *</label><input id=field2 name=990640></div>
+<div class=form-group><label>Phone: *</label><input id=field3 name=990641></div>
+<div class=form-group><label>Cover Letter:</label><textarea id=field4 name=990642></textarea></div>
+<div class=form-group><label>Resume: *</label><div><input type=file id=field5></div></div>
+<label><input type=checkbox id=terms> I agree to the terms</label>"""
+
+
+class TestUnlinkedLabels(unittest.TestCase):
+    def test_labels_not_tied_to_inputs_and_trailing_colons(self):
+        filled, v = run_fill(UNLINKED)
+        self.assertEqual((v["field1"], v["field2"], v["field3"]), ("Alex Example", "alex@example.com", "(555) 010-0000"))
+        self.assertTrue(v["field4"].startswith("Dear Hiring Team"))
+        self.assertTrue(v["field5"].endswith("_Resume.pdf"))
+        self.assertEqual(v["terms"], "on")   # checkbox value untouched (never ticked)
+
+
 class TestAddress(unittest.TestCase):
     def test_address_fields_selects_and_what_is_left_alone(self):
         from jobbot import profile as P
