@@ -180,6 +180,45 @@ class TestEmploymentAndEducation(unittest.TestCase):
         self.assertIn("Add your education", res["notes"][0])
 
 
+ADDRESS = """<label>Street address<input id=street></label><label>City<input id=city></label>
+<label>State<select id=state><option value="">Select</option><option value="CA">California</option><option value="TX">Texas</option></select></label>
+<label>ZIP code<input id=zip></label>
+<label>Country<select id=country><option value="">-</option><option>Canada</option><option>United States of America</option></select></label>
+<label>Preferred office location<input id=pref></label><label>Are you willing to relocate?<input id=reloc></label>
+<label>Email address<input id=em type=email></label>
+<div class=survey><label>Country<select id=survey_country><option value="">-</option><option>United States of America</option></select></label></div>
+<label>Location<input id=gh role=combobox></label>"""
+
+
+class TestAddress(unittest.TestCase):
+    def test_address_fields_selects_and_what_is_left_alone(self):
+        from jobbot import profile as P
+        contact = {**PAYLOAD["contact"], **P.address({"location": "Kyle, TX", "address": "1 Example St", "postal_code": "78640"})}
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            b = p.chromium.launch(); pg = b.new_page()
+            pg.set_content(f"<html><body>{ADDRESS}</body></html>")
+            pg.add_script_tag(path=str(FILL_JS))
+            res = pg.evaluate("async p => jobbotFill(p)", {**PAYLOAD, "contact": contact})
+            v = pg.evaluate("() => Object.fromEntries([...document.querySelectorAll('input,select')].map(e => [e.id, e.value]))")
+            b.close()
+        self.assertEqual((v["street"], v["city"], v["state"], v["zip"], v["country"]),
+                         ("1 Example St", "Kyle", "TX", "78640", "United States of America"))
+        self.assertEqual((v["pref"], v["reloc"], v["survey_country"], v["gh"]), ("", "", "", ""))   # left alone
+        self.assertEqual(v["em"], "alex@example.com")                                               # not the street
+        for what in ("street address", "city", "state", "ZIP", "country"):
+            self.assertIn(what, res["filled"])
+
+    def test_address_from_profile(self):
+        from jobbot import profile as P
+        self.assertEqual(P.address({"location": "Kyle, TX"}),
+                         {"address": "", "city": "Kyle", "state": "TX", "state_name": "Texas", "postal_code": "",
+                          "country": "United States"})
+        self.assertEqual((P.address({"location": "Berlin, Germany"})["state"], P.address({"location": "Berlin, Germany"})["country"]),
+                         ("", "Germany"))
+        self.assertEqual(P.address({"location": "Austin, Texas"})["state"], "TX")
+
+
 class TestProfileDates(unittest.TestCase):
     def test_parse_dates_and_education(self):
         from jobbot import profile as P
@@ -218,6 +257,7 @@ class TestExtensionKeys(unittest.TestCase):
         self.assertEqual((me["contact"]["first_name"], me["contact"]["email"]), ("Alex", "alex.example@example.com"))
         self.assertEqual((me["employment"][0]["company"], me["employment"][0]["current"]), ("Northwind Bank", True))
         self.assertEqual(me["education"][0]["degree"], "B.S.")
+        self.assertEqual((me["contact"]["city"], me["contact"]["state"], me["contact"]["country"]), ("Denver", "CO", "United States"))
         import json as _j
         self.assertEqual(me["extension_version"], _j.loads((REPO / "extension" / "manifest.json").read_text())["version"])
         jobs = self.c.get("/api/ext/jobs", headers=self.ext).get_json()

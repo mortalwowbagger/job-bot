@@ -66,6 +66,27 @@ window.jobbotSelects = async function (p) {
 
   const byId = (re) => [...document.querySelectorAll("input[role=combobox]")].find((el) => re.test(el.id));
 
+  // Country and "Location (City)" searchable dropdowns (Greenhouse)
+  const c = p.contact || {};
+  const country = byId(/^country$/);
+  if (country && c.country) {
+    const wants = [c.country].concat(/united states/i.test(c.country) ? ["United States of America"] : []);
+    await choose(country, "country", wants, 1);
+  }
+  const loc = byId(/^candidate-location$/) || [...document.querySelectorAll("input[role=combobox]")]
+    .find((el) => /^location\b/i.test(((el.labels && el.labels[0] && el.labels[0].innerText) || "").trim()));
+  if (loc && c.city) {
+    const sel = selectFor(loc);
+    if (sel && !hasValue(sel) && typeof sel.onInputChange === "function") {
+      sel.onInputChange([c.city, c.state].filter(Boolean).join(", "), { action: "input-change", prevInputValue: "" });
+      let opts = [];
+      for (let t = 0; t < 40 && !opts.length; t++) { await new Promise((r) => setTimeout(r, 150)); opts = sel.props.options || []; }
+      const pick = best(opts, [c.city, c.state_name || c.state, c.country].filter(Boolean).join(" "), 0.66);
+      if (pick) { sel.selectOption(pick); filled.push("location"); }
+      else notes.push("Choose your city in the Location field.");
+    }
+  }
+
   // month dropdowns for every employment row fill.js filled (row i = profile job i)
   let months = 0;
   for (let i = 0; i < (p.employment || []).length; i++) {

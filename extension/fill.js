@@ -31,7 +31,7 @@
   function textFields() {
     return [...document.querySelectorAll(
       "input:not([type]), input[type=text], input[type=email], input[type=tel], input[type=url], textarea")]
-      .filter(visible);
+      .filter((el) => visible(el) && el.getAttribute("role") !== "combobox");
   }
 
   const done = [];
@@ -39,7 +39,8 @@
 
   function fill(what, value, selectors, labelRe, attrRe, notRe) {
     if (!value) return false;
-    const ok = (el) => el && visible(el) && !el.value && !used.has(el) && !SENSITIVE.test(labelText(el));
+    const ok = (el) => el && visible(el) && !el.value && !used.has(el) && !SENSITIVE.test(labelText(el)) &&
+      el.getAttribute("role") !== "combobox";
     for (const sel of selectors || []) {
       const el = document.querySelector(sel);
       if (ok(el)) { setValue(el, value); used.add(el); done.push(what); return true; }
@@ -96,7 +97,59 @@
       !(nextSection && (nextSection.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING))) || null;
   }
 
+  // standard <select> dropdowns for state / country (never ones inside surveys)
+  function selectNative(c) {
+    const norm = (s) => (s || "").toLowerCase().replace(/[^a-z ]/g, "").trim();
+    for (const el of [...document.querySelectorAll("select")].filter(visible)) {
+      if (el.value || used.has(el) || /survey|eeo/i.test(el.name || "") || el.closest("[class*=survey], [class*=eeo]")) continue;
+      const lab = labelText(el);
+      if (SENSITIVE.test(lab)) continue;
+      let wants = null, what = null;
+      if (/^(state|province)\b/i.test(lab) && (c.state || c.state_name)) { wants = [c.state, c.state_name]; what = "state"; }
+      else if (/^country\b/i.test(lab) && c.country) {
+        wants = [c.country].concat(/united states/i.test(c.country) ? ["United States of America", "USA", "US"] : []); what = "country";
+      }
+      if (!wants) continue;
+      const opt = [...el.options].find((o) => wants.some((w) => w && (norm(o.text) === norm(w) || norm(o.value) === norm(w))));
+      if (opt) {
+        el.value = opt.value;
+        for (const t of ["input", "change"]) el.dispatchEvent(new Event(t, { bubbles: true }));
+        used.add(el); done.push(what);
+      }
+    }
+  }
+
+  // Lever's "Current location" only accepts a pick from its suggestions: type the city, choose the match
+  async function leverLocation(c, query) {
+    const input = document.getElementById("location-input");
+    if (!input || input.value || !visible(input)) return;
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+    input.focus();
+    let v = "";
+    for (const ch of query) {
+      v += ch;
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: ch, bubbles: true }));
+      set.call(input, v);
+      input.dispatchEvent(new InputEvent("input", { data: ch, inputType: "insertText", bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent("keyup", { key: ch, bubbles: true }));
+      await sleep(30);
+    }
+    for (let t = 0; t < 25; t++) {
+      await sleep(200);
+      const opts = [...document.querySelectorAll(".dropdown-location")];
+      if (!opts.length) continue;
+      const pick = opts.find((o) => o.innerText.toLowerCase().includes((c.city || "").toLowerCase())) || opts[0];
+      for (const ev of ["mousedown", "mouseup", "click"]) pick.dispatchEvent(new MouseEvent(ev, { bubbles: true }));
+      used.add(input); done.push("location");
+      return;
+    }
+    notes.push("Choose your location from the Current location suggestions.");
+  }
+
+  const notes = [];
+
   window.jobbotFill = async function (p) {
+    notes.length = 0;
     done.length = 0;
     used.clear();
     let rows = 0;
@@ -145,6 +198,21 @@
       if (rows) done.push(`employment (${rows} job${rows > 1 ? "s" : ""})`);
     }
 
+    // Address: only what the profile has (street/ZIP are optional there). Location-preference
+    // questions ("preferred office", "willing to relocate") are left alone.
+    const NOT_LOC = /prefer|office|relocat|willing|which location|work from/i;
+    const cityState = [c.city, c.state].filter(Boolean).join(", ");
+    if (document.getElementById("location-input") && cityState) await leverLocation(c, cityState);
+    fill("street address", c.address, [], /^(street|home|mailing|residential)?\s*address(\s*line)?\s*1?$|^street/i,
+         /address.?line.?1|street/i, /e-?mail|web|url|\bip\b|link/i);
+    fill("city", c.city, [], /^(current\s+)?city\b|^town\b/i, /^city$|address.?city/i, /citizen|state/i);
+    fill("state", c.state, [], /^(state|province|region)\b/i, /^state$|address.?state/i);
+    fill("ZIP", c.postal_code, [], /zip|postal/i, /zip|postal/i);
+    fill("country", c.country, [], /^country\b/i, /^country$/i, /citizen/i);
+    fill("location", cityState, [], /^(current\s+)?location\b|where (are you|do you) (currently )?(located|based|live)|^city,?\s*(and|&|\/)?\s*state/i,
+         null, NOT_LOC);
+    selectNative(c);
+
     // cover letter as text, where a form asks for it in a box (Lever "additional information" etc.)
     const letterBox = [...document.querySelectorAll("textarea")].filter(visible)
       .find((el) => !el.value && !used.has(el) && (/cover\s*letter/i.test(describe(el)) || el.name === "comments"));
@@ -173,11 +241,10 @@
     const cl = inputs.findIndex((el, i) => i !== r && isCover(i));
     if (cl >= 0 && p.files && p.files.letter) attach(inputs[cl], p.files.letter, "cover letter");
 
-    const notes = [];
     if (p.files && p.files.letter && !done.includes("cover letter") && !done.includes("cover letter (text)") &&
         /cover\s*letter/i.test(document.body.innerText || "")) {
       notes.push("This form asks for a cover letter but has no upload box yet: click its Attach button and choose the Cover Letter PDF from job-bot.");
     }
-    return { frame: location.host, filled: [...done], notes };
+    return { frame: location.host, filled: [...done], notes: [...notes] };
   };
 })();

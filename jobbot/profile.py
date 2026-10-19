@@ -226,3 +226,36 @@ def education_line(e):
         return str(e)
     deg = " in ".join(x for x in (e.get("degree"), e.get("field")) if x)
     return ", ".join(str(x) for x in (deg, e.get("school"), e.get("end_year")) if x)
+
+
+US_STATES = {"AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California",
+             "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware", "DC": "District of Columbia",
+             "FL": "Florida", "GA": "Georgia", "HI": "Hawaii", "ID": "Idaho", "IL": "Illinois", "IN": "Indiana",
+             "IA": "Iowa", "KS": "Kansas", "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland",
+             "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi", "MO": "Missouri",
+             "MT": "Montana", "NE": "Nebraska", "NV": "Nevada", "NH": "New Hampshire", "NJ": "New Jersey",
+             "NM": "New Mexico", "NY": "New York", "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio",
+             "OK": "Oklahoma", "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina",
+             "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas", "UT": "Utah", "VT": "Vermont",
+             "VA": "Virginia", "WA": "Washington", "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming",
+             "PR": "Puerto Rico"}
+
+
+def address(contact):
+    """Address parts for application forms, only from what the profile says.
+
+    Optional contact keys: address (street), city, state, postal_code, country.
+    city/state fall back to `location: "Kyle, TX"`; a US state implies country United States."""
+    c = contact or {}
+    loc_city, _, loc_state = (c.get("location") or "").partition(",")
+    city = (c.get("city") or loc_city).strip()
+    state = (c.get("state") or loc_state).strip()
+    abbr = next((k for k, v in US_STATES.items() if state.upper() == k or state.lower() == v.lower()), "")
+    if not abbr and not c.get("state"):  # "Berlin, Germany": the part after the comma is the country
+        country_guess, state = state, ""
+    else:
+        country_guess = "United States" if abbr else ""
+    country = str(c.get("country") or country_guess).strip()
+    return {"address": str(c.get("address") or "").strip(), "city": city, "state": abbr or state,
+            "state_name": US_STATES.get(abbr, state), "postal_code": str(c.get("postal_code") or "").strip(),
+            "country": country}

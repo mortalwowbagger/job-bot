@@ -336,9 +336,9 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
     def ext_me():
         p, _ = prof.validate(g.user.get("profile_yaml") or "")
         c = (p or {}).get("contact") or {}
-        return jsonify(email=g.user.get("email"), contact={k: c.get(k) or "" for k in
+        return jsonify(email=g.user.get("email"), contact={**{k: c.get(k) or "" for k in
                        ("first_name", "last_name", "email", "phone", "location", "linkedin", "github",
-                        "current_company")},
+                        "current_company")}, **prof.address(c)},
                        employment=prof.employment(p or {}), education=prof.education(p or {}),
                        extension_version=EXT_VERSION)
 

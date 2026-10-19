@@ -17,6 +17,10 @@ contact:
   email: alex.example@example.com
   phone: "(555) 010-0000"
   location: Denver, CO
+  # optional, for application forms' address fields (city/state default to location above)
+  # address: 123 Example St
+  # postal_code: "80202"
+  # country: United States
   linkedin: "https://www.linkedin.com/in/example"
   github: "https://github.com/example"
   current_company: Northwind Bank
@@ -45,6 +49,10 @@ summary: >
 experience:
   - company: Northwind Bank
     location: Denver, CO
+  # optional, for application forms' address fields (city/state default to location above)
+  # address: 123 Example St
+  # postal_code: "80202"
+  # country: United States
     title: QA Automation Engineer (Contract)
     dates: March 2026 - Present
     facts:
@@ -54,6 +62,10 @@ experience:
 
   - company: Contoso Lending
     location: Denver, CO
+  # optional, for application forms' address fields (city/state default to location above)
+  # address: 123 Example St
+  # postal_code: "80202"
+  # country: United States
     title: Automation Engineer
     dates: January 2024 - December 2025
     facts:
