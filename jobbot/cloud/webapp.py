@@ -81,7 +81,8 @@ def view_jobs(store, uid, view, sort="newest"):
 
 
 def create_app(store, verify_token, start_run, allowed_emails=(), firebase_config=None,
-               import_model="claude-haiku-4-5-20251001", admin_emails=(), cloud_cfg=None):
+               import_model="claude-haiku-4-5-20251001", admin_emails=(), cloud_cfg=None,
+               stripe_client=None, stripe_webhook_secret=None, base_url="https://job-bot-app.web.app"):
     """verify_token(token) -> {"uid", "email"} or raises; start_run(uid) starts a run job.
 
     admin_emails: the owner(s) - always approved, see the Users screen, higher limits.
@@ -90,7 +91,9 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
     Admins can revoke anyone either way."""
     from .. import profile as prof
     from .. import settings as st
+    from . import billing
     cloud_cfg = cloud_cfg or {}
+    PUBLIC = {"/", "/health", "/api/stripe/webhook", "/terms", "/privacy"}
     open_signup = cloud_cfg.get("signup", "open") == "open"
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = prof.MAX_PDF_BYTES + 64 * 1024
@@ -112,7 +115,7 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
 
     @app.before_request
     def auth():
-        if request.path == "/" or request.path == "/health":
+        if request.path in PUBLIC:
             return None
         header = request.headers.get("Authorization", "")
         if not header.startswith("Bearer "):
@@ -157,6 +160,9 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
         user = store.get_user(rec["uid"]) or {}
         if user.get("access") != "approved":
             return jsonify(error="Access to this job-bot isn't available for your account."), 403
+        if not billing.limits(cloud_cfg, user)["extension"]:
+            return jsonify(error="The browser extension is part of job-bot Pro. Upgrade in job-bot Settings.",
+                           upgrade=True), 403
         if (rec.get("last_used") or "") < (datetime.now() - timedelta(hours=1)).isoformat():
             store.touch_ext_token(h)
         g.uid, g.user, g.is_admin, g.via_extension = rec["uid"], user, bool(user.get("is_admin")), True
@@ -227,7 +233,7 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
         return jsonify(run=run, apply={}, counts=cached[1], follow_ups_due=cached[2],
                        has_profile=bool(me.get("profile_yaml")),
                        has_settings=bool(me.get("settings")) or g.is_admin,
-                       is_admin=g.is_admin, pending_requests=pending)
+                       is_admin=g.is_admin, pending_requests=pending, plan=billing.plan_name(g.user))
 
     @app.get("/api/jobs")
     def jobs():
@@ -300,11 +306,57 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
 
     def limits():
         day = date.today().isoformat()
-        per_day = cloud_cfg.get("owner_runs_per_day", 10) if g.is_admin else \
-            (cloud_cfg.get("friend_limits") or {}).get("runs_per_day", 2)
-        return {"runs_per_day": per_day,
-                "runs_today": int(store.get_usage(g.uid, day).get("manual_runs", 0)),
+        lim = billing.limits(cloud_cfg, g.user)
+        return {**lim, "runs_today": int(store.get_usage(g.uid, day).get("manual_runs", 0)),
                 "month_cost": round(store.get_usage(g.uid, day[:7]).get("cost_usd", 0.0), 2)}
+
+    # ------------------------------------------------------------ billing
+    def plan_info():
+        u, plans = g.user, cloud_cfg.get("plans") or {}
+        pro = plans.get("pro") or {}
+        return {**limits(), "subscription_status": u.get("subscription_status"), "comp": bool(u.get("comp")),
+                "current_period_end": u.get("current_period_end"), "cancel_at_period_end": bool(u.get("cancel_at_period_end")),
+                "billing_interval": u.get("billing_interval"), "has_billing": bool(u.get("stripe_customer_id")),
+                "payments_enabled": bool(stripe_client and (cloud_cfg.get("stripe") or {}).get("price_monthly")),
+                "prices": {"month": pro.get("price_monthly_usd"), "year": pro.get("price_yearly_usd")},
+                "plans": {k: {kk: v.get(kk) for kk in ("label", "runs_per_day", "scheduled", "max_score_per_run",
+                                                      "max_tailor_per_run", "extension")} for k, v in plans.items()}}
+
+    @app.get("/api/billing")
+    def billing_info():
+        return jsonify(plan_info())
+
+    @app.post("/api/billing/checkout")
+    def billing_checkout():
+        prices = cloud_cfg.get("stripe") or {}
+        price = prices.get("price_yearly" if (request.get_json(silent=True) or {}).get("interval") == "year"
+                           else "price_monthly")
+        if not (stripe_client and price):
+            return jsonify(error="Payments aren't set up yet."), 503
+        if billing.plan_name(g.user) != "free":
+            return jsonify(error="You already have Pro. Use Manage billing to change it."), 400
+        return jsonify(url=billing.checkout_url(stripe_client, store, g.uid, g.user, price, base_url))
+
+    @app.post("/api/billing/portal")
+    def billing_portal():
+        if not (stripe_client and g.user.get("stripe_customer_id")):
+            return jsonify(error="No billing account yet."), 400
+        return jsonify(url=billing.portal_url(stripe_client, store, g.uid, g.user, base_url,
+                                              (cloud_cfg.get("stripe") or {}).get("portal_config")))
+
+    @app.post("/api/stripe/webhook")
+    def stripe_webhook():
+        import stripe
+        if not (stripe_client and stripe_webhook_secret):
+            return jsonify(error="not configured"), 503
+        try:
+            event = stripe.Webhook.construct_event(request.get_data(), request.headers.get("Stripe-Signature", ""),
+                                                   stripe_webhook_secret)
+        except (ValueError, stripe.SignatureVerificationError):
+            return jsonify(error="bad signature"), 400
+        print("stripe:", billing.handle_event(stripe_client, store, event), flush=True)
+        user_cache.pop("budget", None)
+        return jsonify(ok=True)
 
     @app.get("/api/me")
     def me():
@@ -322,6 +374,9 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
     def ext_connect():
         if g.via_extension:
             abort(403)
+        if not limits()["extension"]:
+            return jsonify(error="The browser extension is part of Pro. Upgrade to fill applications automatically.",
+                           upgrade=True), 403
         token = "jbx_" + secrets.token_urlsafe(32)
         store.put_ext_token(hashlib.sha256(token.encode()).hexdigest(), g.uid)
         return jsonify(token=token)
@@ -364,12 +419,12 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
         return jsonify(ok=True, settings=clean_s, warnings=st.city_warnings(clean_s["local_areas"]))
 
     def budget_used():
-        """Estimated API spend this month by everyone except admins (cached 5 min)."""
+        """Estimated API spend this month by free users (cached 5 min); paying users cover their own."""
         bc = user_cache.get("budget")
         if not bc or time.time() - bc[0] > 300:
             month = date.today().isoformat()[:7]
             used = sum(store.get_usage(u, month).get("cost_usd", 0.0)
-                       for u, d in store.list_users() if not d.get("is_admin"))
+                       for u, d in store.list_users() if billing.plan_name(d) == "free")
             bc = user_cache["budget"] = (time.time(), used)
         return bc[1]
 
@@ -386,13 +441,22 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
             out.append({"uid": uid, "email": d.get("email"), "access": d.get("access") or "pending",
                         "is_admin": bool(d.get("is_admin")), "requested_at": d.get("requested_at"),
                         "last_seen": d.get("last_seen"), "has_profile": bool(d.get("profile_yaml")),
-                        "has_settings": bool(d.get("settings")),
+                        "has_settings": bool(d.get("settings")), "plan": billing.plan_name(d),
+                        "comp": bool(d.get("comp")), "subscription_status": d.get("subscription_status"),
                         "runs_today": int(store.get_usage(uid, day).get("manual_runs", 0)),
                         "month_cost": round(store.get_usage(uid, day[:7]).get("cost_usd", 0.0), 2)})
         order = {"pending": 0, "approved": 1, "denied": 2}
         user_cache.pop("budget", None)
         out.sort(key=lambda u: (order.get(u["access"], 3), u["email"] or ""))
         return jsonify(out)
+
+    @app.post("/api/admin/users/<uid>/comp")
+    def admin_comp(uid):
+        admin_only()
+        if not store.get_user(uid) or uid == g.uid:
+            abort(400, "Can't change that.")
+        store.update_user(uid, comp=bool((request.get_json(silent=True) or {}).get("comp")))
+        return jsonify(ok=True)
 
     @app.post("/api/admin/users/<uid>")
     def admin_set_access(uid):
@@ -449,12 +513,13 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
         if not me.get("settings") and not g.is_admin:
             return jsonify(error="Choose the job titles you want first (Settings button)."), 400
         lim = limits()
-        if not g.is_admin and budget_used() >= cloud_cfg.get("monthly_budget_usd", 25):
-            return jsonify(error="job-bot has reached its monthly budget for searches. They resume "
-                                 "next month; your saved prospects and applications are still here."), 429
+        if lim["plan"] == "free" and budget_used() >= cloud_cfg.get("monthly_budget_usd", 25):
+            return jsonify(error="Free searches have reached this month's limit. Upgrade to Pro to keep searching; "
+                                 "your saved prospects and applications are still here.", upgrade=True), 429
         if lim["runs_today"] >= lim["runs_per_day"]:
-            return jsonify(error=f"You've used today's {lim['runs_per_day']} runs. "
-                                 "The automatic 7am search still runs tomorrow."), 429
+            more = " Upgrade to Pro for 3 a day plus a daily automatic search." if lim["plan"] == "free" else ""
+            return jsonify(error=f"You've used today's {lim['runs_per_day']} search{'es' if lim['runs_per_day'] > 1 else ''}."
+                                 + more, upgrade=lim["plan"] == "free"), 429
         cur = store.get_run(g.uid)
         if cur.get("running") and cur.get("started") and \
                 datetime.fromisoformat(cur["started"]) > datetime.now() - RUN_STALE:
@@ -494,4 +559,7 @@ def make_app():
                       firebase_config=json.loads(os.environ.get("JOBBOT_FIREBASE_CONFIG", "{}")),
                       import_model=cfg["model_score"],
                       admin_emails=os.environ.get("JOBBOT_ADMIN_EMAILS", "").split(","),
-                      cloud_cfg=cfg.get("cloud") or {})
+                      cloud_cfg=cfg.get("cloud") or {},
+                      stripe_client=billing._stripe(os.environ["STRIPE_SECRET_KEY"]) if os.environ.get("STRIPE_SECRET_KEY") else None,
+                      stripe_webhook_secret=os.environ.get("STRIPE_WEBHOOK_SECRET"),
+                      base_url=os.environ.get("JOBBOT_BASE_URL", "https://job-bot-app.web.app"))

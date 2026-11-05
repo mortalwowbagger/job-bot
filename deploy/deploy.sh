@@ -42,8 +42,12 @@ gc run jobs deploy jobbot-run --image="$IMAGE" --region="$REGION" --service-acco
   --memory=2Gi --cpu=1 --task-timeout=60m --max-retries=0
 
 echo "== Web service"
+WEB_SECRETS=ANTHROPIC_API_KEY=anthropic-api-key:latest
+for pair in STRIPE_SECRET_KEY:stripe-secret-key STRIPE_WEBHOOK_SECRET:stripe-webhook-secret; do
+  gc secrets describe "${pair##*:}" >/dev/null 2>&1 && WEB_SECRETS="$WEB_SECRETS,${pair%%:*}=${pair##*:}:latest"
+done
 gc run deploy jobbot-web --image="$IMAGE" --region="$REGION" --service-account="$SA" \
-  --env-vars-file="$ENVFILE" --set-secrets=ANTHROPIC_API_KEY=anthropic-api-key:latest \
+  --env-vars-file="$ENVFILE" --set-secrets="$WEB_SECRETS" \
   --allow-unauthenticated --memory=512Mi --cpu=1 --timeout=120 \
   --min-instances=0 --max-instances=2 --concurrency=20
 

@@ -2,5 +2,6 @@
 firebase-admin>=6.5
 google-cloud-run>=0.10
 gunicorn>=22.0
+stripe>=10
 # must match the browsers in the Docker base image (see Dockerfile)
 playwright==1.63.0

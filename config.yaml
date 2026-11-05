@@ -234,12 +234,28 @@ search:
 # ---------------------------------------------------------------
 cloud:
   signup: open                  # open: anyone with a Google account gets in | approval: you approve on the Users screen
-  monthly_budget_usd: 25        # estimated Claude API spend cap for everyone except you; their runs pause when reached
-  owner_runs_per_day: 10        # manual "Run search" presses per day (the 7am run is extra)
-  friend_limits:                # everyone else: keeps API costs predictable
-    runs_per_day: 2
-    max_score_per_run: 80
-    max_tailor_per_run: 5
-  inactive_days: 14             # the 7am run skips friends who haven't opened the app in this long
+  monthly_budget_usd: 25        # estimated Claude API spend cap for FREE users combined; their runs pause when reached
+  owner_runs_per_day: 10        # your manual "Run search" presses per day (the 7am run is extra)
+  plans:                        # what each plan gets; the owner is unlimited
+    free:
+      label: Free
+      runs_per_day: 1           # manual "Run search" presses per day
+      scheduled: weekly         # automatic 7am search: weekly (Mondays) or daily
+      max_score_per_run: 20
+      max_tailor_per_run: 3
+      extension: false          # browser extension (form filling)
+    pro:
+      label: Pro
+      price_monthly_usd: 15
+      price_yearly_usd: 144
+      runs_per_day: 3
+      scheduled: daily
+      max_score_per_run: 80
+      max_tailor_per_run: 10
+      extension: true
+  stripe:                       # filled in by `python -m jobbot.cloud.stripe_setup` (test mode first, then live)
+    price_monthly: ""
+    price_yearly: ""
+  inactive_days: 14             # the 7am run skips free users who haven't opened the app in this long
   first_run_multiplier: 2       # a new user's first run scores/tailors this many times more (clears the backlog)
   expire_unscored_days: 14      # queued jobs still unscored after this long are dropped (postings go stale)

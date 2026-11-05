@@ -90,12 +90,12 @@ class TestPipeline(unittest.TestCase):
         store.ensure_user("f1", "friend@example.com", access="approved", last_seen=pipeline.now(),
                           settings={"title_keywords": ["sdet"], "min_score": 70})
         store.set_profile("f1", PROFILE_YAML)
-        self.run_once(store)
+        self.run_once(store, uids=["u1", "f1"])   # manual run (free users' automatic search is weekly)
         titles = {j["title"] for j in store.jobs("f1", ["tailored", "low_score", "scored", "new"])}
         self.assertTrue(titles and all("sdet" in t.lower() for t in titles), titles)
         self.assertGreater(len(store.jobs("u1", ["tailored"])), len(titles) - 1)
         ucfg = pipeline.user_cfg(CFG, store.get_user("f1"))
-        self.assertEqual(ucfg["max_tailor_per_run"], CFG["cloud"]["friend_limits"]["max_tailor_per_run"])
+        self.assertEqual(ucfg["max_tailor_per_run"], CFG["cloud"]["plans"]["free"]["max_tailor_per_run"])
 
     def test_scheduled_run_skips_inactive_friends_but_manual_run_doesnt(self):
         store = MemoryStore()
@@ -282,7 +282,7 @@ class TestAccessAndSettings(unittest.TestCase):
         self.store.add_usage("f", pipeline.datetime.now().strftime("%Y-%m"), cost_usd=5.01)
         r = c.post("/api/run", headers=self.H["friend"])
         self.assertEqual(r.status_code, 429)
-        self.assertIn("monthly budget", r.get_json()["error"])
+        self.assertIn("this month's limit", r.get_json()["error"])
         self.assertEqual(c.post("/api/run", headers=self.H["owner"]).status_code, 200)
         users = self.store.list_users()
         self.assertEqual([u for u, _ in pipeline.eligible(users, {**CFG, "cloud": {**CFG["cloud"], "monthly_budget_usd": 5}},
@@ -306,7 +306,7 @@ class TestAccessAndSettings(unittest.TestCase):
                         headers=self.H["friend"])
         self.assertEqual(r.status_code, 200)                                   # saved anyway...
         self.assertIn("no state", r.get_json()["warnings"][0])                  # ...with a reminder
-        per_day = CFG["cloud"]["friend_limits"]["runs_per_day"]
+        per_day = CFG["cloud"]["plans"]["free"]["runs_per_day"]
         for _ in range(per_day):
             self.assertEqual(self.c.post("/api/run", headers=self.H["friend"]).status_code, 200)
             self.store.set_run("f", running=False)

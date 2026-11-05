@@ -105,23 +105,27 @@ def refresh_queue(store, uid, log=print, every_days=2, cap=250, statuses=("tailo
 
 
 def user_cfg(cfg, user):
-    """config.yaml + this user's search settings + (for non-owners) the friend limits."""
+    """config.yaml + this user's search settings + their plan's per-run caps."""
+    from .billing import limits
     ucfg = settings.to_cfg(cfg, user_settings(user))
-    if not user.get("is_admin"):
-        lim = (cfg.get("cloud") or {}).get("friend_limits") or {}
-        for k in ("max_score_per_run", "max_tailor_per_run"):
-            if k in lim:
-                ucfg[k] = min(ucfg.get(k, lim[k]), lim[k])
+    lim = limits(cfg.get("cloud") or {}, user)
+    for k in ("max_score_per_run", "max_tailor_per_run"):
+        if lim.get(k) is not None:
+            ucfg[k] = min(ucfg.get(k, lim[k]), lim[k])
     return ucfg
 
 
 def budget_used(store, users):
+    """Estimated API spend this month by free users (paying users cover their own)."""
+    from .billing import plan_name
     month = datetime.now().strftime("%Y-%m")
-    return sum(store.get_usage(u, month).get("cost_usd", 0.0) for u, d in users if not d.get("is_admin"))
+    return sum(store.get_usage(u, month).get("cost_usd", 0.0) for u, d in users if plan_name(d) == "free")
 
 
 def eligible(users, cfg, uids=None, scheduled=False, spent=0.0):
-    days = (cfg.get("cloud") or {}).get("inactive_days", 14)
+    from .billing import plan_name, runs_today
+    cloud = cfg.get("cloud") or {}
+    days = cloud.get("inactive_days", 14)
     over_budget = spent >= (cfg.get("cloud") or {}).get("monthly_budget_usd", 25)
     cutoff = (datetime.now() - timedelta(days=days)).isoformat(timespec="seconds")
     out = []
@@ -130,10 +134,13 @@ def eligible(users, cfg, uids=None, scheduled=False, spent=0.0):
             continue
         if not d.get("profile_yaml") or d.get("access") != "approved":
             continue
-        if over_budget and not d.get("is_admin"):
-            print(f"Skipping {d.get('email')}: monthly budget reached")
+        free = plan_name(d) == "free"
+        if over_budget and free:
+            print(f"Skipping {d.get('email')}: free-plan monthly budget reached")
             continue
-        if scheduled and not d.get("is_admin") and (d.get("last_seen") or "") < cutoff:
+        if scheduled and not runs_today(cloud, d):
+            continue  # free plan: the automatic search is weekly
+        if scheduled and free and (d.get("last_seen") or "") < cutoff:
             print(f"Skipping {d.get('email')}: inactive for {days}+ days")
             continue
         out.append((u, d))

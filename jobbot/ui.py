@@ -102,6 +102,11 @@ body.onboarding .dash,body.onboarding .counts,body.onboarding .runbox{display:no
 .step.done .num{background:var(--good);color:#fff}
 .step.locked{opacity:.5}.step.locked button{pointer-events:none}
 .step .body{flex:1;min-width:0}.step p{margin:4px 0 10px}
+.planbox{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:16px;background:var(--bg)}
+.planbox h3{margin:0 0 6px}.plancols{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px 0}
+.plancols>div{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--panel)}
+.plancols b{display:block;margin-bottom:4px}.plancols ul{margin:0;padding-left:16px;font-size:12px}
+.bar-actions{display:inline-flex;gap:6px;margin-left:8px}
 .privacy{text-align:left;border-top:1px solid var(--line);padding-top:12px;margin-top:18px}
 .hosted,.admin{display:none}
 body.is-hosted .hosted{display:inline-flex} body.is-admin .admin{display:inline-flex}
@@ -144,6 +149,7 @@ body.is-hosted .hosted{display:inline-flex} body.is-admin .admin{display:inline-
     <button id="logbtn" class="hide-sm" onclick="toggleLog()">Log</button></span>
   <button onclick="openProfile()">Profile</button>
   <button class="hosted" onclick="openSettings()">Settings</button>
+  <button class="hosted free-only primary" id="upgradebtn" onclick="openSettings()" style="display:none">Upgrade</button>
   <button class="admin" id="usersbtn" onclick="openUsers()">Users</button>
   <button class="dash" onclick="openAdd()">+ Add</button>
   <button class="primary dash" id="runbtn" onclick="startRun()">Run search</button>
@@ -172,6 +178,7 @@ body.is-hosted .hosted{display:inline-flex} body.is-admin .admin{display:inline-
 <div id="setup2" class="callout" style="display:none;margin:12px 16px">Next, choose the job titles and locations you
   want. <button class="primary" onclick="openSettings()">Open settings</button></div>
 <dialog id="setmodal" class="wide"><form id="setform" onsubmit="saveSettings(event)">
+  <div id="plan" class="planbox"></div>
   <h2>Search settings</h2>
   <p class="meta" id="usage"></p>
   <div class="grid">
@@ -276,7 +283,7 @@ async function headers(){const h={"Content-Type":"application/json","X-JobBot":"
 async function api(path,opts={}){const r=await fetch(path,{...opts,headers:await headers()});
   const j=await r.json().catch(()=>({}));if(r.status==401&&CFG.hosted){showLogin();throw new Error("Signed out")}
   if(r.status==403&&j.access&&j.access!="approved"){showPending(j.error);throw new Error(j.error)}
-  if(!r.ok)throw new Error(j.error||r.statusText);return j}
+  if(!r.ok){const e=new Error(j.error||r.statusText);e.upgrade=!!j.upgrade;throw e}return j}
 const post=(p,b)=>api(p,{method:"POST",body:JSON.stringify(b||{})});
 const fileUrl=(id,n)=>`/files/${encodeURIComponent(id)}/${encodeURIComponent(n)}`;
 async function fileBlobUrl(id,n){const r=await fetch(fileUrl(id,n),{headers:await headers()});if(!r.ok)throw new Error("File unavailable");return URL.createObjectURL(await r.blob())}
@@ -376,7 +383,23 @@ async function saveProfile(){$("proferr").textContent="";$("profsaved").textCont
     if(onboarding)$("profmodal").close();poll()}
   catch(e){$("proferr").textContent=e.message}}
 const lines=v=>(v||[]).join("\n");
-async function openSettings(){const r=await api("/api/settings"),s=r.settings,f=$("setform");
+const PLANLINE=p=>`<ul><li>${p.scheduled=="daily"?"Daily":"Weekly"} automatic search</li><li>${p.runs_per_day} manual search${p.runs_per_day>1?"es":""} a day</li>
+  <li>${p.max_score_per_run} jobs scored, ${p.max_tailor_per_run} tailored packets per search</li><li>${p.extension?"Browser extension (fills applications)":"No browser extension"}</li></ul>`;
+async function renderPlan(){if(!CFG.hosted)return;let b;try{b=await api("/api/billing")}catch(e){return}
+  const el=$("plan");document.body.classList.toggle("is-free",b.plan=="free");
+  if(b.plan=="owner"){el.innerHTML=`<h3>Plan: Owner</h3><div class="meta">Unlimited. Comp friends with Pro on the Users screen.</div>`;return}
+  if(b.plan=="pro"){const until=b.current_period_end?(b.cancel_at_period_end?`ends ${fmt(b.current_period_end)}`:`renews ${fmt(b.current_period_end)}`):"";
+    el.innerHTML=`<h3>Plan: Pro${b.comp?" (complimentary)":""}</h3><div class="meta">${b.comp?"Courtesy of the owner.":`${b.billing_interval=="year"?"Yearly":"Monthly"} · ${until}`}${b.subscription_status=="past_due"?" · <b>payment failed, update your card</b>":""}</div>
+      ${b.has_billing?`<div class="marks"><button type="button" onclick="portal()">Manage billing</button></div>`:""}`;return}
+  el.innerHTML=`<h3>Plan: Free</h3><div class="plancols"><div><b>Free</b>${PLANLINE(b.plans.free)}</div><div><b>Pro · $${b.prices.month}/month</b>${PLANLINE(b.plans.pro)}</div></div>
+    ${b.payments_enabled?`<div class="marks"><button type="button" class="primary" onclick="checkout('month')">Upgrade · $${b.prices.month}/month</button>
+      <button type="button" onclick="checkout('year')">$${b.prices.year}/year (save ${Math.round(100-100*b.prices.year/(12*b.prices.month))}%)</button></div>
+      <div class="meta">Secure checkout by Stripe. Cancel anytime; Pro stays on until the end of the period you paid for.</div>`
+    :`<div class="meta">Pro is coming soon.</div>`}
+    ${b.has_billing?`<div class="marks"><button type="button" onclick="portal()">Billing history</button></div>`:""}`}
+async function checkout(interval){try{const r=await post("/api/billing/checkout",{interval});location.href=r.url}catch(e){alertBar(e.message)}}
+async function portal(){try{const r=await post("/api/billing/portal");location.href=r.url}catch(e){alertBar(e.message)}}
+async function openSettings(){renderPlan();const r=await api("/api/settings"),s=r.settings,f=$("setform");
   f.title_keywords.value=lines(s.title_keywords);f.exclude_keywords.value=lines(s.exclude_keywords);
   f.local_areas.value=lines(s.local_areas);f.remote_only.checked=!!s.remote_only;f.us_only.checked=!!s.us_only;
   f.min_score.value=s.min_score;f.companies.value=lines(s.companies);cityHint();$("seterr").textContent="";$("setsaved").textContent="";$("delmsg").textContent="";$("delconfirm").value="";
@@ -391,9 +414,9 @@ function extStatus(){const el=$("extstatus");if(!el)return;
   $("extinstall").style.display=ext.connected?"none":"";
   el.textContent=!ext.present?"Extension not detected in this browser yet: download and install it above.":ext.connected?"Connected ✓ The job-bot icon can now fill applications.":"Installed, not connected yet."}
 function pingExt(){window.postMessage({source:"jobbot-page",type:"ping"},location.origin);setTimeout(extStatus,400)}
-async function connectExt(){if(!ext.present){$("extstatus").textContent="Install the extension first (Download extension above, then the steps), then reload this page.";return}
+async function connectExt(){if(!CFG.hosted)return;if(!ext.present){$("extstatus").textContent="Install the extension first (Download extension above, then the steps), then reload this page.";return}
   try{const r=await post("/api/ext/connect");window.postMessage({source:"jobbot-page",type:"connect",token:r.token},location.origin)}
-  catch(e){$("extstatus").textContent=e.message}}
+  catch(e){$("extstatus").textContent=e.message;if(e.upgrade)$("plan").scrollIntoView({behavior:"smooth"})}}
 async function disconnectExt(){try{const r=await post("/api/ext/disconnect");window.postMessage({source:"jobbot-page",type:"disconnect"},location.origin);
   $("extstatus").textContent=`Disconnected (${r.removed} browser${r.removed==1?"":"s"}).`}catch(e){$("extstatus").textContent=e.message}}
 function cityHint(){ // same rule as settings.city_warnings on the server
@@ -411,9 +434,12 @@ async function openUsers(){await renderUsers();$("usersmodal").showModal()}
 async function renderUsers(){const us=await api("/api/admin/users");
   $("userlist").innerHTML=us.map(u=>`<div class="urow"><div class="who"><b>${esc(u.email)}</b>${u.is_admin?' <span class="tag">owner</span>':""}
     <div class="meta">${esc(u.access)}${u.requested_at?" · signed up "+fmt(u.requested_at):""}${u.last_seen?" · last seen "+ago(u.last_seen):""}
+    · <b>${esc(u.plan)}</b>${u.comp?" (comp)":""}${u.subscription_status?" · "+esc(u.subscription_status):""}
     · ${u.has_profile?"profile ✓":"no profile"} · ${u.has_settings||u.is_admin?"settings ✓":"no settings"} · runs today ${u.runs_today} · $${u.month_cost.toFixed(2)} this month</div></div>
+    ${u.is_admin||(u.plan=="pro"&&!u.comp)?"":`<button onclick="setComp('${u.uid}',${!u.comp})">${u.comp?"Remove Pro":"Give Pro"}</button>`}
     ${u.is_admin?"":(u.access=="approved"?`<button onclick="setAccess('${u.uid}','denied')">Revoke</button>`:
       `<button class="primary" onclick="setAccess('${u.uid}','approved')">Approve</button>${u.access=="pending"?`<button onclick="setAccess('${u.uid}','denied')">Deny</button>`:""}`)}</div>`).join("")||'<p class="meta">No one yet.</p>'}
+async function setComp(uid,comp){await post(`/api/admin/users/${encodeURIComponent(uid)}/comp`,{comp});await renderUsers()}
 async function setAccess(uid,access){await post(`/api/admin/users/${encodeURIComponent(uid)}`,{access});await renderUsers();poll()}
 let onboarding=false;
 function renderWelcome(s){
@@ -430,10 +456,12 @@ function renderWelcome(s){
 function finishWelcome(){onboarding=false;document.body.classList.remove("onboarding");$("welcome").style.display="none";document.querySelector("main").style.display="";$("tabs").style.display="";loadList()}
 async function firstRun(){finishWelcome();await startRun()}
 function showPending(msg){$("app").style.display="none";$("login").style.display="none";$("pending").style.display="block";$("pendingmsg").textContent=msg}
-async function startRun(){try{await post("/api/run");if(!phone())$("log").style.display="block";poll()}catch(e){alertBar(e.message)}}
+async function startRun(){try{await post("/api/run");if(!phone())$("log").style.display="block";poll()}catch(e){alertBar(e.message,e.upgrade)}}
 function copyText(btn,id){navigator.clipboard.writeText($(id).innerText).then(()=>{btn.textContent="Copied";setTimeout(()=>btn.textContent="Copy",1200)})}
 function toggleLog(){const l=$("log");l.style.display=l.style.display=="block"?"none":"block";l.scrollTop=l.scrollHeight}
-function alertBar(msg){const b=$("applybar");b.style.display="block";b.textContent=msg;setTimeout(()=>b.style.display="none",5000)}
+function alertBar(msg,upgrade){const b=$("applybar");b.style.display="block";b.textContent=msg;
+  if(upgrade){const x=document.createElement("button");x.className="primary bar-actions";x.textContent="See Pro";x.onclick=openSettings;b.appendChild(x)}
+  clearTimeout(window._ab);window._ab=setTimeout(()=>b.style.display="none",upgrade?12000:5000)}
 
 async function poll(){
   let s;try{s=await api("/api/state")}catch(e){return}
@@ -450,6 +478,7 @@ async function poll(){
   if(CFG.hosted){renderWelcome(s);$("setup").style.display=$("setup2").style.display="none"}
   else $("setup").style.display=s.has_profile===false?"block":"none";
   document.body.classList.toggle("is-admin",!!s.is_admin);
+  if(CFG.hosted)$("upgradebtn").style.display=s.plan=="free"&&!onboarding?"":"none";
   if(s.is_admin)$("usersbtn").textContent=s.pending_requests?`Users (${s.pending_requests} new)`:"Users";
   const bar=$("applybar");
   if(a.running){bar.style.display="block";bar.innerHTML=`Browser open for #${esc(a.job_id)}. Review everything, <b>submit it yourself</b>, close the window, then mark the outcome here.`}
@@ -462,6 +491,9 @@ async function poll(){
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)poll()});
 async function refresh(){await loadList();await poll()}
 function showApp(){$("login").style.display="none";$("pending").style.display="none";$("app").style.display="block";renderTabs();refresh();
+  const bq=new URLSearchParams(location.search).get("billing");
+  if(CFG.hosted&&bq){history.replaceState(null,"",location.pathname);
+    alertBar(bq=="success"?"Welcome to Pro! Daily searches, more tailored packets and the browser extension are on. (It can take a few seconds to show.)":"Checkout cancelled. No charge was made.")}
   if(CFG.hosted&&new URLSearchParams(location.search).get("settings")){history.replaceState(null,"",location.pathname);setTimeout(openSettings,300)}}
 function showLogin(){$("app").style.display="none";$("pending").style.display="none";$("login").style.display="block"}
 

@@ -5,6 +5,7 @@ Layout (everything is per user, so friends can be added later):
                                    settings, profile_yaml, last_seen, created_at
   users/{uid}/usage/{YYYY-MM[-DD]} runs, manual_runs, cost_usd (cost guardrails)
   ext_tokens/{sha256(token)}       uid, created_at, last_used (browser-extension keys; only hashes stored)
+  stripe_customers/{customer_id}   uid (maps Stripe webhooks back to a user)
   users/{uid}/jobs/{job_id}        one prospect or application (only jobs that
                                    passed the free filters are stored)
   users/{uid}/jobs/{job_id}/events timeline entries
@@ -65,6 +66,13 @@ class FirestoreStore:
     def get_usage(self, uid, key):
         snap = self._user(uid).collection("usage").document(key).get()
         return snap.to_dict() if snap.exists else {}
+
+    def set_stripe_customer(self, customer_id, uid):
+        self.db.collection("stripe_customers").document(customer_id).set({"uid": uid})
+
+    def uid_for_stripe_customer(self, customer_id):
+        snap = self.db.collection("stripe_customers").document(customer_id).get()
+        return (snap.to_dict() or {}).get("uid") if snap.exists else None
 
     def put_ext_token(self, token_hash, uid):
         self.db.collection("ext_tokens").document(token_hash).set({"uid": uid, "created_at": now()})
@@ -161,6 +169,7 @@ class MemoryStore:
     def __init__(self):
         self.users, self.jobsd, self.eventsd, self.files, self.runs, self.usage = {}, {}, {}, {}, {}, {}
         self.ext = {}
+        self.stripe_customers = {}
 
     def get_user(self, uid):
         return self.users.get(uid)
@@ -183,6 +192,12 @@ class MemoryStore:
 
     def get_usage(self, uid, key):
         return dict(self.usage.get((uid, key), {}))
+
+    def set_stripe_customer(self, customer_id, uid):
+        self.stripe_customers[customer_id] = uid
+
+    def uid_for_stripe_customer(self, customer_id):
+        return self.stripe_customers.get(customer_id)
 
     def put_ext_token(self, token_hash, uid):
         self.ext[token_hash] = {"uid": uid, "created_at": now()}
