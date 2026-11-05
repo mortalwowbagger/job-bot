@@ -11,15 +11,16 @@ FIREBASE_SDK = "https://www.gstatic.com/firebasejs/10.12.2"
 
 
 def render(cfg, landing=None):
-    """landing: {"plans", "payments_enabled", "operator", "base_url"} -> public landing page (hosted only)."""
+    """landing: {"plans", "payments_enabled", "operator", "base_url", "launched"} -> public landing page (hosted only)."""
     from . import landing as lp
     cfg = {"hosted": False, "firebase": None, **cfg}
     page = PAGE
     if cfg["hosted"] and landing is not None:
         start, end = page.index('<div id="login">'), page.index('<div id="pending"')
-        page = (page[:start] + lp.body(landing.get("plans"), landing.get("payments_enabled"), landing.get("operator"))
+        page = (page[:start] + lp.body(landing.get("plans"), landing.get("payments_enabled"), landing.get("operator"),
+                         landing.get("launched", True))
                 + "\n" + page[end:])
-        page = page.replace("<title>job-bot</title>", f"<title>{lp.TITLE}</title>\n" + lp.head(landing.get("base_url", "")))
+        page = page.replace("<title>job-bot</title>", f"<title>{lp.TITLE}</title>\n" + lp.head(landing.get("base_url", ""), landing.get("launched", True)))
         page = page.replace("</style>", lp.CSS + "</style>", 1)
     # </ can't appear inside the inline JSON (it would end the <script> tag)
     return page.replace("__CFG__", json.dumps(cfg).replace("</", "<\\/")).replace("__SDK__", FIREBASE_SDK)

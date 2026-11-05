@@ -1,5 +1,0 @@
-User-agent: *
-Allow: /$
-Allow: /og.png
-Disallow: /api/
-Sitemap: https://job-bot-app.web.app/sitemap.xml

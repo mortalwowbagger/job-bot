@@ -19,9 +19,10 @@ DESCRIPTION = ("job-bot searches 10 job sources every morning, scores each role 
                "You review everything and submit it yourself.")
 
 
-def head(base_url):
+def head(base_url, launched=True):
     e = html.escape
-    return f"""<meta name="description" content="{e(DESCRIPTION)}">
+    hidden = "" if launched else '<meta name="robots" content="noindex, nofollow">\n'
+    return hidden + f"""<meta name="description" content="{e(DESCRIPTION)}">
 <link rel="canonical" href="{e(base_url)}/">
 <meta property="og:type" content="website"><meta property="og:url" content="{e(base_url)}/">
 <meta property="og:title" content="{e(TITLE)}"><meta property="og:description" content="{e(DESCRIPTION)}">
@@ -116,7 +117,7 @@ def _plan_list(p):
     return "".join(f"<li>{html.escape(r)}</li>" for r in rows)
 
 
-def body(plans=None, payments_enabled=False, operator=None):
+def body(plans=None, payments_enabled=False, operator=None, launched=True):
     e = html.escape
     plans = plans or {}
     free, pro = plans.get("free") or {}, plans.get("pro") or {}
@@ -136,6 +137,9 @@ def body(plans=None, payments_enabled=False, operator=None):
         op = f"<p><b>Who runs this:</b> built and run by {e(operator['name'])}{link}" + \
              (f", {e(operator['role'])}" if operator.get("role") else "") + ". Questions or problems: reach out directly.</p>"
     chips = "".join(f"<span>{e(s)}</span>" for s in SOURCES)
+    cta = "Start free with Google" if launched else "Sign in to request access"
+    invite = "" if launched else ('<p class="lp-invite">job-bot is invite-only while it\'s being finished. '
+                                  "Sign in with Google to request access; you'll get in once you're approved.</p>")
     return f"""<div id="login" class="landing">
   <header class="lp-top"><b>job-bot</b><span class="spacer"></span>
     <a href="#how">How it works</a><a href="#example">Example</a><a href="#pricing">Pricing</a><a href="#faq">FAQ</a>
@@ -146,8 +150,9 @@ def body(plans=None, payments_enabled=False, operator=None):
     <p class="lp-sub">job-bot scans 10 job sources every morning, scores each role against your real background,
       and drafts a tailored resume and cover letter using <b>only facts from your profile</b>.
       You review everything and <b>click submit yourself</b>.</p>
-    <p><button class="primary lp-cta" onclick="signIn()">Start free with Google</button>
+    <p><button class="primary lp-cta" onclick="signIn()">{cta}</button>
        <a class="btn" href="#example">See an example</a></p>
+    {invite}
     <p class="meta" id="loginerr"></p>
     {LIVE_MARK}
   </section>
@@ -208,7 +213,7 @@ def body(plans=None, payments_enabled=False, operator=None):
 {CONTACT}
 
   <section class="lp-sec lp-end"><h2>Spend your time on the applications worth sending.</h2>
-    <p><button class="primary lp-cta" onclick="signIn()">Start free with Google</button></p></section>
+    <p><button class="primary lp-cta" onclick="signIn()">{cta}</button></p></section>
   <footer class="lp-foot meta"><a href="#contact">Contact</a> · <a href="{REPO}" rel="noopener" target="_blank">Open source on GitHub</a></footer>
 </div>"""
 
@@ -250,6 +255,8 @@ CSS = """
 .lp-form{display:grid;gap:8px;max-width:560px}.lp-form textarea,.lp-form input{width:100%;box-sizing:border-box;font:inherit;padding:8px 10px;border:1px solid var(--line);
   border-radius:8px;background:var(--panel);color:var(--ink)}
 .lp-hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+.lp-invite{border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:8px;padding:8px 12px;
+  background:var(--panel);font-size:14px;max-width:620px}
 html.signed-in #login.landing{display:none}
 @media (max-width:800px){.lp-pillars,.lp-plans,.lp-ex-grid{grid-template-columns:1fr}.lp-top a{display:none}.lp-hero{padding-top:24px}}
 """

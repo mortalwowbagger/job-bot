@@ -15,6 +15,7 @@ from jobbot.cloud.webapp import create_app
 REPO = Path(__file__).parent.parent
 FIX = Path(__file__).parent / "fixtures"
 CFG = yaml.safe_load((REPO / "config.yaml").read_text())
+CFG["cloud"]["launched"] = True  # these tests cover the launched app; test_prelaunch_lock covers the lock
 PROFILE_YAML = (REPO / "profile.example.yaml").read_text()
 
 
@@ -238,6 +239,28 @@ class TestWebapp(unittest.TestCase):
         self.assertNotIn(landing.LIVE_MARK, html)
         self.assertEqual(landing.live_line({"at": "2020-01-01T07:00:00", "listings": 5000, "sources": 9}), "")  # stale
         self.assertEqual(landing.live_line({"at": pipeline.now(), "listings": 40, "sources": 2}), "")          # too small
+
+    def test_prelaunch_lock(self):
+        store = MemoryStore()
+        people = {"friend": {"uid": "f", "email": "friend@example.com"}}
+        locked = create_app(store, people.__getitem__, lambda u: None,
+                            cloud_cfg={**CFG["cloud"], "launched": False, "signup": "open"}).test_client()
+        r = locked.get("/")
+        html = r.data.decode()
+        self.assertEqual(r.headers["X-Robots-Tag"], "noindex, nofollow")
+        self.assertIn('content="noindex, nofollow"', html)
+        self.assertIn("invite-only", html)
+        self.assertNotIn("Start free with Google", html)
+        self.assertEqual(locked.get("/robots.txt").data.decode(), "User-agent: *\nDisallow: /\n")
+        self.assertEqual(locked.get("/sitemap.xml").status_code, 404)
+        # sign-up waits for approval even though signup says open
+        r = locked.get("/api/jobs", headers={"Authorization": "Bearer friend"})
+        self.assertEqual((r.status_code, r.get_json()["access"]), (403, "pending"))
+        # launched: indexable again
+        live = create_app(store, people.__getitem__, lambda u: None, cloud_cfg={**CFG["cloud"], "launched": True}).test_client()
+        self.assertNotIn("X-Robots-Tag", live.get("/").headers)
+        self.assertIn("Sitemap:", live.get("/robots.txt").data.decode())
+        self.assertEqual(live.get("/sitemap.xml").status_code, 200)
 
     def test_public_landing_page(self):
         html = self.c.get("/").data.decode()

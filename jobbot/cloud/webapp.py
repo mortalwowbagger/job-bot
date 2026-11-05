@@ -93,8 +93,9 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
     from .. import settings as st
     from . import billing
     cloud_cfg = cloud_cfg or {}
-    PUBLIC = {"/", "/health", "/api/stripe/webhook", "/terms", "/privacy", "/api/feedback"}
-    open_signup = cloud_cfg.get("signup", "open") == "open"
+    PUBLIC = {"/", "/health", "/api/stripe/webhook", "/terms", "/privacy", "/api/feedback", "/robots.txt", "/sitemap.xml"}
+    launched = cloud_cfg.get("launched", True)  # False = pre-launch: approval-only sign-up, hidden from search engines
+    open_signup = launched and cloud_cfg.get("signup", "open") == "open"
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = prof.MAX_PDF_BYTES + 64 * 1024
     admins = {e.strip().lower() for e in admin_emails if e.strip()}
@@ -102,7 +103,8 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
     user_cache = {}
     page = render({"hosted": True, "firebase": firebase_config or {}}, landing={
         "plans": cloud_cfg.get("plans"), "operator": cloud_cfg.get("operator"), "base_url": base_url,
-        "payments_enabled": bool(stripe_client and (cloud_cfg.get("stripe") or {}).get("price_monthly"))})
+        "payments_enabled": bool(stripe_client and (cloud_cfg.get("stripe") or {}).get("price_monthly")),
+        "launched": launched})
     counts_cache = {}
     feedback_log = {}  # ip -> recent send times (simple spam brake; per server instance)
     stats_cache = []
@@ -211,7 +213,23 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
             except Exception:  # noqa: BLE001 - the page must load even if stats can't
                 stats = {}
             stats_cache[:] = [time.time(), lp.live_line(stats)]
-        return Response(page.replace(lp.LIVE_MARK, stats_cache[1], 1), mimetype="text/html")
+        resp = Response(page.replace(lp.LIVE_MARK, stats_cache[1], 1), mimetype="text/html")
+        if not launched:
+            resp.headers["X-Robots-Tag"] = "noindex, nofollow"
+        return resp
+
+    @app.get("/robots.txt")
+    def robots():
+        rules = (f"Allow: /$\nAllow: /og.png\nDisallow: /api/\nSitemap: {base_url}/sitemap.xml\n" if launched
+                 else "Disallow: /\n")  # pre-launch: keep the site out of search results
+        return Response("User-agent: *\n" + rules, mimetype="text/plain")
+
+    @app.get("/sitemap.xml")
+    def sitemap():
+        if not launched:
+            abort(404)
+        return Response('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+                        f"<url><loc>{base_url}/</loc></url></urlset>\n", mimetype="application/xml")
 
     @app.post("/api/feedback")
     def feedback():

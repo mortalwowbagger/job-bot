@@ -233,6 +233,7 @@ search:
 # min score) are per user and edited on the Settings screen.
 # ---------------------------------------------------------------
 cloud:
+  launched: false               # false = pre-launch lock: invite-only page, hidden from search engines (signup forced to approval)
   signup: open                  # open: anyone with a Google account gets in | approval: you approve on the Users screen
   monthly_budget_usd: 25        # estimated Claude API spend cap for FREE users combined; their runs pause when reached
   owner_runs_per_day: 10        # your manual "Run search" presses per day (the 7am run is extra)

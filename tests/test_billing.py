@@ -17,6 +17,7 @@ from jobbot.cloud.webapp import create_app
 
 REPO = Path(__file__).parent.parent
 CFG = yaml.safe_load((REPO / "config.yaml").read_text())
+CFG["cloud"]["launched"] = True  # these tests cover the launched app; test_prelaunch_lock covers the lock
 CLOUD = {**CFG["cloud"], "stripe": {"price_monthly": "price_m", "price_yearly": "price_y"}}
 SECRET = "whsec_test"
 
