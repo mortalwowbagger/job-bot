@@ -195,8 +195,9 @@ body.is-hosted .hosted{display:inline-flex} body.is-admin .admin{display:inline-
   <p class="meta" id="usage"></p>
   <div class="grid">
     <label class="wide">Job titles to look for (one per line)<textarea name="title_keywords" rows="7"
-      placeholder="qa engineer&#10;sdet&#10;test automation"></textarea>
-      <span>Whole words, any capitalization. End with * to match word starts: <code>engineer*</code> also matches "engineering".</span></label>
+      placeholder="account executive&#10;registered nurse&#10;rn&#10;qa engineer"></textarea>
+      <span>Whole words, any capitalization. Add the short forms employers use too (<code>rn</code>, <code>sdr</code>,
+      <code>hr generalist</code>). End with * to match word starts: <code>engineer*</code> also matches "engineering".</span></label>
     <label class="wide">Skip titles containing (one per line)<textarea name="exclude_keywords" rows="5"></textarea></label>
     <label><span><input type="checkbox" name="remote_only"> Remote jobs only</span></label>
     <label><span><input type="checkbox" name="us_only"> United States only</span></label>

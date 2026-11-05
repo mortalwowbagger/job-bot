@@ -26,8 +26,9 @@ FAQ = [
      "flagged for you to verify."),
     ("Which job boards does it search?", ", ".join(SOURCES) + ", plus any company careers pages you add. No LinkedIn "
      "or Indeed scraping (it breaks their terms and gets accounts banned)."),
-    ("Is it only for tech jobs?", "No. You choose the job titles, so it works for marketing, data, HR, healthcare "
-     "and more. It started with QA and engineering roles, where coverage is deepest."),
+    ("Is it only for tech jobs?", "No. You choose the job titles. The job sources have the most openings in sales, "
+     "marketing, design, HR and recruiting, accounting, customer support, nursing and engineering. They have fewer "
+     "for teaching, and very few for logistics, warehouse and trades jobs, so job-bot isn't a good fit there yet."),
     ("Who isn't job-bot for?", "If you want a bot that sends hundreds of applications for you without you reading "
      "them, job-bot isn't it. It's for people who want fewer, better applications and to check each one."),
     ("Does it answer work-authorization, salary or demographic questions?", "Never. Those are always left for you."),
@@ -197,7 +198,7 @@ def body(plans=None, payments_enabled=False, operator=None, launched=True, quote
     <button class="primary" onclick="signIn()">Sign in</button></header>
 
   <section class="lp-hero">
-    <p class="lp-eyebrow">For QA engineers and SDETs first, coverage deepest where you need it.</p>
+    <p class="lp-eyebrow">For sales, marketing, design, HR, finance, healthcare, engineering and QA jobs: you pick the titles.</p>
     <h1>A daily job search that never invents your experience.</h1>
     <p class="lp-sub">job-bot scans 10 job sources every morning, scores each role against your real background,
       and drafts a tailored resume and cover letter using <b>only facts from your profile</b>.
