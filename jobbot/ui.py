@@ -118,7 +118,7 @@ body.onboarding .dash,body.onboarding .counts,body.onboarding .runbox{display:no
 .plancols b{display:block;margin-bottom:4px}.plancols ul{margin:0;padding-left:16px;font-size:12px}
 .bar-actions{display:inline-flex;gap:6px;margin-left:8px}
 .privacy{text-align:left;border-top:1px solid var(--line);padding-top:12px;margin-top:18px}
-.hosted,.admin{display:none}
+.hosted,.admin,.hostedblk{display:none} body.is-hosted .hostedblk{display:block}
 body.is-hosted .hosted{display:inline-flex} body.is-admin .admin{display:inline-flex}
 .urow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--line)}
 .urow .who{flex:1;min-width:200px}
@@ -224,6 +224,10 @@ body.is-hosted .hosted{display:inline-flex} body.is-admin .admin{display:inline-
   <p class="meta" id="extstatus"></p>
   <div class="marks"><button type="button" onclick="connectExt()">Connect browser extension</button>
     <button type="button" onclick="disconnectExt()">Disconnect</button></div>
+  <div class="hostedblk"><h3>Questions or feedback</h3>
+  <p class="meta">Goes to the person who runs job-bot, with your sign-in email so they can reply.</p>
+  <textarea id="fbmsg" rows="3" maxlength="3000" placeholder="Your question, a bug, or an idea"></textarea>
+  <div class="marks"><button type="button" onclick="sendFeedback()">Send</button><span class="meta" id="fbsent"></span></div></div>
   <h3>Delete my data</h3>
   <p class="meta">Permanently deletes your profile, settings, prospects, applications, timelines and PDFs from job-bot.</p>
   <div class="note"><input id="delconfirm" placeholder="Type DELETE to confirm"><button type="button" onclick="deleteMe()">Delete everything</button></div>
@@ -233,6 +237,8 @@ body.is-hosted .hosted{display:inline-flex} body.is-admin .admin{display:inline-
   <p class="meta">Everyone who has signed in. Their runs use your Claude API key, within the per-person and
   monthly limits in config.yaml. Revoke anyone who shouldn't have access.</p>
   <div id="userlist"></div>
+  <h3>Messages</h3><p class="meta">From the contact form on the public page and in Settings.</p>
+  <div id="fblist"></div>
   <div class="marks"><button onclick="$('usersmodal').close()">Close</button></div></dialog>
 <dialog id="profmodal" class="wide">
   <h2>Your profile</h2>
@@ -440,7 +446,7 @@ async function saveSettings(ev){ev.preventDefault();const f=$("setform");$("sete
     $("setsaved").textContent="Saved. The next run uses these."+((r.warnings||[]).length?" Note: "+r.warnings.join(" "):"");if(onboarding)$("setmodal").close();poll()}catch(e){$("seterr").textContent=e.message}}
 async function deleteMe(){try{await post("/api/me/delete",{confirm:$("delconfirm").value.trim()});$("delmsg").textContent="Deleted.";
   setTimeout(signOut,1200)}catch(e){$("delmsg").textContent=e.message}}
-async function openUsers(){await renderUsers();$("usersmodal").showModal()}
+async function openUsers(){await Promise.all([renderUsers(),renderFeedback()]);$("usersmodal").showModal()}
 async function renderUsers(){const us=await api("/api/admin/users");
   $("userlist").innerHTML=us.map(u=>`<div class="urow"><div class="who"><b>${esc(u.email)}</b>${u.is_admin?' <span class="tag">owner</span>':""}
     <div class="meta">${esc(u.access)}${u.requested_at?" · signed up "+fmt(u.requested_at):""}${u.last_seen?" · last seen "+ago(u.last_seen):""}
@@ -449,6 +455,12 @@ async function renderUsers(){const us=await api("/api/admin/users");
     ${u.is_admin||(u.plan=="pro"&&!u.comp)?"":`<button onclick="setComp('${u.uid}',${!u.comp})">${u.comp?"Remove Pro":"Give Pro"}</button>`}
     ${u.is_admin?"":(u.access=="approved"?`<button onclick="setAccess('${u.uid}','denied')">Revoke</button>`:
       `<button class="primary" onclick="setAccess('${u.uid}','approved')">Approve</button>${u.access=="pending"?`<button onclick="setAccess('${u.uid}','denied')">Deny</button>`:""}`)}</div>`).join("")||'<p class="meta">No one yet.</p>'}
+async function renderFeedback(){const fs=await api("/api/admin/feedback");
+  $("fblist").innerHTML=fs.map(f=>`<div class="urow"><div class="who"><div class="meta">${fmt(f.at)}${f.reply_to?" · reply to <b>"+esc(f.reply_to)+"</b>":" · no reply email"}${f.uid?" · signed in":""}</div>
+    <div style="white-space:pre-wrap">${esc(f.message)}</div></div><button onclick="delFeedback('${esc(f.id)}')">Remove</button></div>`).join("")||'<p class="meta">No messages.</p>'}
+async function delFeedback(id){await post(`/api/admin/feedback/${encodeURIComponent(id)}/delete`);await renderFeedback();poll()}
+async function sendFeedback(){const m=$("fbmsg").value.trim();if(!m)return;
+  try{await post("/api/feedback",{message:m});$("fbmsg").value="";$("fbsent").textContent="Sent. Thank you!"}catch(e){$("fbsent").textContent=e.message}}
 async function setComp(uid,comp){await post(`/api/admin/users/${encodeURIComponent(uid)}/comp`,{comp});await renderUsers()}
 async function setAccess(uid,access){await post(`/api/admin/users/${encodeURIComponent(uid)}`,{access});await renderUsers();poll()}
 let onboarding=false;
@@ -489,7 +501,7 @@ async function poll(){
   else $("setup").style.display=s.has_profile===false?"block":"none";
   document.body.classList.toggle("is-admin",!!s.is_admin);
   if(CFG.hosted)$("upgradebtn").style.display=s.plan=="free"&&!onboarding?"":"none";
-  if(s.is_admin)$("usersbtn").textContent=s.pending_requests?`Users (${s.pending_requests} new)`:"Users";
+  if(s.is_admin)$("usersbtn").textContent="Users"+([s.pending_requests?`${s.pending_requests} new`:"",s.messages?`${s.messages} msg`:""].filter(Boolean).map(x=>` (${x})`).join(""));
   const bar=$("applybar");
   if(a.running){bar.style.display="block";bar.innerHTML=`Browser open for #${esc(a.job_id)}. Review everything, <b>submit it yourself</b>, close the window, then mark the outcome here.`}
   else if(wasApplying){bar.style.display="block";bar.innerHTML=a.exit_code?`Pre-fill for #${esc(a.job_id)} stopped: ${esc((a.lines||[]).slice(-2).join(" "))}`:`Browser closed for #${esc(a.job_id)}. Did you submit? Mark it as <b>Applied</b>.`;if(sel==a.job_id)openJob(sel)}

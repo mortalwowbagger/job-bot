@@ -40,6 +40,73 @@ def _schema(base_url):
     return json.dumps(data).replace("</", "<\\/")
 
 
+LIVE_MARK = "<!--live-stats-->"
+
+
+def live_line(stats, today=None):
+    """One factual line from the last daily search, or "" when there's nothing recent worth showing."""
+    from datetime import date, datetime
+    try:
+        at = datetime.fromisoformat(stats["at"]).date()
+        listings, nsrc = int(stats["listings"]), int(stats.get("sources") or 0)
+    except (KeyError, TypeError, ValueError):
+        return ""
+    if listings < 100 or ((today or date.today()) - at).days > 8:
+        return ""
+    when = f"{at:%b} {at.day}"
+    scored = int(stats.get("scored") or 0)
+    tail = f", then scored {scored:,} new ones against people's profiles" if scored else ""
+    return (f'<p class="lp-live"><span class="lp-dot"></span><span>Daily search on {when}: checked <b>{listings:,}</b> '
+            f"open postings from <b>{nsrc}</b> sources{tail}.</span></p>")
+
+
+# Worked example (made-up candidate and company) in the same shape as a real result.
+EXAMPLE = """
+  <section id="example" class="lp-sec"><h2>What you get for each job</h2>
+    <p class="meta">An example with a made-up candidate and company. Your results use your own profile.</p>
+    <div class="lp-ex">
+      <div class="lp-ex-head"><div><b>Senior QA Automation Engineer</b><div class="meta">Acme Payments · Remote (US) · posted 2 days ago</div></div>
+        <span class="lp-score">86</span></div>
+      <div class="lp-ex-grid">
+        <div><h4>Why it fits</h4><ul>
+          <li>Asks for Playwright and API testing; the profile has 4 years of both.</li>
+          <li>Payments domain matches the candidate's last role.</li>
+          <li>Remote, US: matches the location settings.</li></ul>
+          <h4>Worth knowing</h4><ul><li>Wants load-testing experience (k6); the profile doesn't mention it.</li></ul></div>
+        <div><h4>Tailored resume (excerpt)</h4>
+          <p class="lp-quote">Built a Playwright suite of 600 end-to-end tests for checkout and refunds, run on every pull request.</p>
+          <p class="lp-quote">Load-tested the refunds API with <u>k6</u> before each release.</p>
+          <p class="meta">Reordered and reworded from the profile. Employer, title and dates are copied exactly.</p>
+          <h4>Checks before you send</h4>
+          <div class="lp-flag">⚠ "k6" isn't in your profile. Remove it or add it to your profile if it's true.</div></div>
+      </div>
+      <div class="lp-ex-foot"><h4>Draft answer: "Why are you interested in Acme Payments?"</h4>
+        <p class="lp-quote">I've spent the last four years testing payment flows, where a missed edge case costs real
+          money. Your team's focus on refunds and disputes is the part of payments I like testing most.</p>
+        <p class="meta">Plus a cover letter and PDFs ready to attach. Edit anything; nothing is sent until you submit.</p></div>
+    </div>
+  </section>"""
+
+CONTACT = """
+  <section id="contact" class="lp-sec"><h2>Questions or feedback</h2>
+    <p class="meta">Goes straight to the person who runs job-bot. Add an email if you'd like a reply.</p>
+    <form class="lp-form" onsubmit="lpSend(event)">
+      <textarea name="message" rows="4" maxlength="3000" required placeholder="Your question or idea"></textarea>
+      <input name="reply_to" type="email" maxlength="200" placeholder="Email for a reply (optional)">
+      <input name="website" class="lp-hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <div><button class="primary" type="submit">Send</button> <span class="meta" id="lpsent"></span></div>
+    </form>
+  </section>
+<script>
+async function lpSend(ev){ev.preventDefault();const f=ev.target,out=document.getElementById("lpsent");
+  const h={"Content-Type":"application/json"};try{const t=await getToken();if(t)h.Authorization="Bearer "+t}catch(e){}
+  try{const r=await fetch("/api/feedback",{method:"POST",headers:h,body:JSON.stringify(
+    {message:f.message.value,reply_to:f.reply_to.value,website:f.website.value})});const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.error||"Couldn't send. Try again.");f.reset();out.textContent="Sent. Thank you!"}
+  catch(e){out.textContent=e.message}}
+</script>"""
+
+
 def _plan_list(p):
     rows = [f"{'Daily' if p.get('scheduled') == 'daily' else 'Weekly'} automatic search",
             f"{p.get('runs_per_day')} manual search{'es' if (p.get('runs_per_day') or 0) > 1 else ''} a day",
@@ -71,7 +138,7 @@ def body(plans=None, payments_enabled=False, operator=None):
     chips = "".join(f"<span>{e(s)}</span>" for s in SOURCES)
     return f"""<div id="login" class="landing">
   <header class="lp-top"><b>job-bot</b><span class="spacer"></span>
-    <a href="#how">How it works</a><a href="#pricing">Pricing</a><a href="#faq">FAQ</a>
+    <a href="#how">How it works</a><a href="#example">Example</a><a href="#pricing">Pricing</a><a href="#faq">FAQ</a>
     <button class="primary" onclick="signIn()">Sign in</button></header>
 
   <section class="lp-hero">
@@ -80,8 +147,9 @@ def body(plans=None, payments_enabled=False, operator=None):
       and drafts a tailored resume and cover letter using <b>only facts from your profile</b>.
       You review everything and <b>click submit yourself</b>.</p>
     <p><button class="primary lp-cta" onclick="signIn()">Start free with Google</button>
-       <a class="btn" href="#how">See how it works</a></p>
+       <a class="btn" href="#example">See an example</a></p>
     <p class="meta" id="loginerr"></p>
+    {LIVE_MARK}
   </section>
 
   <section class="lp-sec lp-pillars">
@@ -109,6 +177,7 @@ def body(plans=None, payments_enabled=False, operator=None):
     </ol>
     <p class="meta">Searches: <span class="lp-chips">{chips}</span></p>
   </section>
+{EXAMPLE}
 {pricing}
   <section class="lp-sec"><h2>Plain talk about your data</h2>
     <p>Your profile, resumes and applications are stored in this job-bot's private Google Cloud project. The person who
@@ -136,9 +205,11 @@ def body(plans=None, payments_enabled=False, operator=None):
       more tailored packets and the browser extension.</p></details>
   </section>
 
+{CONTACT}
+
   <section class="lp-sec lp-end"><h2>Spend your time on the applications worth sending.</h2>
     <p><button class="primary lp-cta" onclick="signIn()">Start free with Google</button></p></section>
-  <footer class="lp-foot meta"><a href="{REPO}" rel="noopener" target="_blank">Open source on GitHub</a></footer>
+  <footer class="lp-foot meta"><a href="#contact">Contact</a> · <a href="{REPO}" rel="noopener" target="_blank">Open source on GitHub</a></footer>
 </div>"""
 
 
@@ -155,7 +226,7 @@ CSS = """
 .lp-pillars{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}.lp-pillars h3{font-size:17px;margin:0 0 6px;text-transform:none;letter-spacing:0;color:var(--ink)}
 .lp-pillars p{margin:0;color:var(--muted)}
 .lp-demo{margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--panel);font-size:13px}
-.lp-demo u{text-decoration-color:var(--warn);text-decoration-thickness:2px}
+.lp-demo u,.lp-ex u{text-decoration-color:var(--warn);text-decoration-thickness:2px}
 .lp-flag{margin-top:8px;color:var(--warn);font-weight:600;font-size:12px}
 .lp-steps{padding-left:20px}.lp-steps li{margin:8px 0}
 .lp-chips span{display:inline-block;background:var(--chip);border-radius:6px;padding:1px 8px;margin:2px;font-size:12px}
@@ -166,6 +237,19 @@ CSS = """
 .lp-plan ul{padding-left:18px;margin:8px 0}
 #faq details{border-bottom:1px solid var(--line);padding:10px 0}#faq summary{cursor:pointer;font-weight:600}
 .lp-end{text-align:center}.lp-foot{padding-top:18px;border-top:1px solid var(--line)}
+.lp-live{display:flex;gap:8px;align-items:baseline;font-size:14px;color:var(--muted);margin:14px 0 0}
+.lp-dot{width:8px;height:8px;border-radius:50%;background:var(--good,#2e9d5b);flex:none}
+.lp-ex{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:16px;margin-top:10px}
+.lp-ex-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;border-bottom:1px solid var(--line);padding-bottom:10px}
+.lp-score{font-size:22px;font-weight:700;border:2px solid var(--accent);border-radius:10px;padding:2px 10px}
+.lp-ex-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;padding-top:6px}
+#login.landing .lp-ex h4{margin:12px 0 4px;font-size:13px;text-transform:none;letter-spacing:0;color:var(--ink)}
+.lp-ex ul{margin:0;padding-left:18px}.lp-ex li{margin:3px 0}
+.lp-quote{margin:4px 0;padding:6px 10px;border-left:3px solid var(--line);font-style:italic}
+.lp-ex-foot{border-top:1px solid var(--line);margin-top:12px}
+.lp-form{display:grid;gap:8px;max-width:560px}.lp-form textarea,.lp-form input{width:100%;box-sizing:border-box;font:inherit;padding:8px 10px;border:1px solid var(--line);
+  border-radius:8px;background:var(--panel);color:var(--ink)}
+.lp-hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
 html.signed-in #login.landing{display:none}
-@media (max-width:800px){.lp-pillars,.lp-plans{grid-template-columns:1fr}.lp-top a{display:none}.lp-hero{padding-top:24px}}
+@media (max-width:800px){.lp-pillars,.lp-plans,.lp-ex-grid{grid-template-columns:1fr}.lp-top a{display:none}.lp-hero{padding-top:24px}}
 """

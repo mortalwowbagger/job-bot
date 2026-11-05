@@ -75,6 +75,8 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(len(store.jobsd), 2)
         self.run_once(store)
         self.assertEqual(len(store.jobsd), 2)
+        stats = store.get_stats()      # the daily search records numbers for the public page
+        self.assertEqual((stats["listings"], stats["sources"]), (len(fake_jobs()), 2))
 
     def test_only_approved_users_with_profiles_run(self):
         store = MemoryStore()
@@ -206,11 +208,43 @@ class TestWebapp(unittest.TestCase):
         self.assertEqual(order("&sort=found"), ["old", "fresh"])   # recently discovered first
         self.assertIn("posted_at", self.c.get("/api/jobs?view=review", headers=self.h).get_json()[0])
 
+    def test_contact_form(self):
+        r = self.c.post("/api/feedback", json={"message": "Does it work for nurses?", "reply_to": "a@b.co"})
+        self.assertEqual(r.status_code, 200)
+        self.c.post("/api/feedback", json={"message": "From inside the app"}, headers={"Authorization": "Bearer other"})
+        self.c.post("/api/feedback", json={"message": "buy pills", "website": "spam.example"})   # honeypot: dropped
+        self.assertEqual(self.c.post("/api/feedback", json={"message": "hi"}).status_code, 400)
+        self.assertEqual(self.c.post("/api/feedback", json={"message": "hello there", "reply_to": "nope"}).status_code, 400)
+        rows = self.c.get("/api/admin/feedback", headers=self.h).get_json()
+        self.assertEqual([(f["message"], f["reply_to"]) for f in rows],
+                         [("From inside the app", "stranger@example.com"), ("Does it work for nurses?", "a@b.co")])
+        self.assertEqual(rows[0]["uid"], "u2")
+        self.assertEqual(self.c.get("/api/state", headers=self.h).get_json()["messages"], 2)
+        self.assertEqual(self.c.get("/api/admin/feedback", headers={"Authorization": "Bearer other"}).status_code, 403)
+        for _ in range(5):
+            last = self.c.post("/api/feedback", json={"message": "again and again"})
+        self.assertEqual(last.status_code, 429)                      # spam brake
+        self.c.post("/api/me/delete", json={"confirm": "DELETE"}, headers={"Authorization": "Bearer other"})
+        self.assertNotIn("From inside the app", [f["message"] for f in self.store.list_feedback()])
+        self.c.post(f"/api/admin/feedback/{rows[1]['id']}/delete", headers=self.h)
+        self.assertNotIn("Does it work for nurses?", [f["message"] for f in self.store.list_feedback()])
+
+    def test_live_stats_line(self):
+        from jobbot import landing
+        self.assertNotIn("Daily search on", self.c.get("/").data.decode())         # nothing recorded yet: hidden
+        self.store.set_stats(at=pipeline.now(), listings=13872, sources=10, scored=150)
+        html = create_app(self.store, lambda t: {}, lambda u: None, cloud_cfg=CFG["cloud"]).test_client().get("/").data.decode()
+        self.assertIn("checked <b>13,872</b> open postings from <b>10</b> sources", html)
+        self.assertNotIn(landing.LIVE_MARK, html)
+        self.assertEqual(landing.live_line({"at": "2020-01-01T07:00:00", "listings": 5000, "sources": 9}), "")  # stale
+        self.assertEqual(landing.live_line({"at": pipeline.now(), "listings": 40, "sources": 2}), "")          # too small
+
     def test_public_landing_page(self):
         html = self.c.get("/").data.decode()
         for bit in ("never invents your experience", "Truthful by construction", "You review and submit",
                     'property="og:image"', "Plain talk about your data", "github.com/mortalwowbagger/job-bot", "$15/month",
-                    "application/ld+json", '"@type": "WebApplication"'):
+                    "application/ld+json", '"@type": "WebApplication"',
+                    "made-up candidate", 'id="contact"'):
             self.assertIn(bit, html)
         self.assertNotIn("Who runs this", html)          # operator stays hidden until configured
         for invented in ("users trust", "000+ ", "3x interviews", "aggregateRating"):

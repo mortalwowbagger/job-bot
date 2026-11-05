@@ -93,7 +93,7 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
     from .. import settings as st
     from . import billing
     cloud_cfg = cloud_cfg or {}
-    PUBLIC = {"/", "/health", "/api/stripe/webhook", "/terms", "/privacy"}
+    PUBLIC = {"/", "/health", "/api/stripe/webhook", "/terms", "/privacy", "/api/feedback"}
     open_signup = cloud_cfg.get("signup", "open") == "open"
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = prof.MAX_PDF_BYTES + 64 * 1024
@@ -104,6 +104,8 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
         "plans": cloud_cfg.get("plans"), "operator": cloud_cfg.get("operator"), "base_url": base_url,
         "payments_enabled": bool(stripe_client and (cloud_cfg.get("stripe") or {}).get("price_monthly"))})
     counts_cache = {}
+    feedback_log = {}  # ip -> recent send times (simple spam brake; per server instance)
+    stats_cache = []
 
     @app.after_request
     def no_cache(resp):
@@ -202,7 +204,43 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
 
     @app.get("/")
     def index():
-        return Response(page, mimetype="text/html")
+        from .. import landing as lp
+        if not stats_cache or time.time() - stats_cache[0] > 600:
+            try:
+                stats = store.get_stats()
+            except Exception:  # noqa: BLE001 - the page must load even if stats can't
+                stats = {}
+            stats_cache[:] = [time.time(), lp.live_line(stats)]
+        return Response(page.replace(lp.LIVE_MARK, stats_cache[1], 1), mimetype="text/html")
+
+    @app.post("/api/feedback")
+    def feedback():
+        """Contact form (public page and Settings). Signed-in senders are identified by their token."""
+        body = request.get_json(silent=True) or {}
+        if body.get("website"):  # hidden field only bots fill in
+            return jsonify(ok=True)
+        message = str(body.get("message") or "").strip()[:3000]
+        reply_to = str(body.get("reply_to") or "").strip()[:200]
+        if len(message) < 5:
+            abort(400, "Write a message first.")
+        if reply_to and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", reply_to):
+            abort(400, "That reply email doesn't look right.")
+        ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
+        recent = [t for t in feedback_log.get(ip, []) if t > time.time() - 3600]
+        if len(recent) >= 5:
+            return jsonify(error="Thanks! That's a lot of messages for one hour; try again later."), 429
+        feedback_log[ip] = recent + [time.time()]
+        sender = {}
+        header = request.headers.get("Authorization", "")
+        if header.startswith("Bearer ") and not header.startswith("Bearer jbx_"):
+            try:
+                claims = verify_token(header[7:])
+                sender = {"uid": claims["uid"], "email": (claims.get("email") or "").lower()}
+            except Exception:  # noqa: BLE001 - send it anonymously
+                pass
+        store.add_feedback({"message": message, "reply_to": reply_to or sender.get("email") or "", **sender})
+        user_cache.pop("feedback", None)
+        return jsonify(ok=True)
 
     @app.get("/health")
     def health():
@@ -225,17 +263,21 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
                 datetime.fromisoformat(run["started"]) < datetime.now() - RUN_STALE:
             run["running"] = False
         me = store.get_user(g.uid) or {}
-        pending = None
+        pending = messages = None
         if g.is_admin:
             pc = user_cache.get("pending")
             if not pc or time.time() - pc[0] > 60:
                 pc = user_cache["pending"] = (time.time(), sum(
                     1 for _, d in store.list_users() if (d.get("access") or "pending") == "pending"))
             pending = pc[1]
+            fc = user_cache.get("feedback")
+            if not fc or time.time() - fc[0] > 60:
+                fc = user_cache["feedback"] = (time.time(), len(store.list_feedback()))
+            messages = fc[1]
         return jsonify(run=run, apply={}, counts=cached[1], follow_ups_due=cached[2],
                        has_profile=bool(me.get("profile_yaml")),
                        has_settings=bool(me.get("settings")) or g.is_admin,
-                       is_admin=g.is_admin, pending_requests=pending, plan=billing.plan_name(g.user))
+                       is_admin=g.is_admin, pending_requests=pending, messages=messages, plan=billing.plan_name(g.user))
 
     @app.get("/api/jobs")
     def jobs():
@@ -451,6 +493,18 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
         user_cache.pop("budget", None)
         out.sort(key=lambda u: (order.get(u["access"], 3), u["email"] or ""))
         return jsonify(out)
+
+    @app.get("/api/admin/feedback")
+    def admin_feedback():
+        admin_only()
+        return jsonify(store.list_feedback())
+
+    @app.post("/api/admin/feedback/<fid>/delete")
+    def admin_feedback_delete(fid):
+        admin_only()
+        store.delete_feedback(fid)
+        user_cache.pop("feedback", None)
+        return jsonify(ok=True)
 
     @app.post("/api/admin/users/<uid>/comp")
     def admin_comp(uid):

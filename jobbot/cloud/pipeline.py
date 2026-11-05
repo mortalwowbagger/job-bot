@@ -205,6 +205,9 @@ def run(store, cfg, uids=None, browser_factory=None):
             p.finish(1)
         raise
     broadcast(f"Fetched {len(jobs)} listings", force=True)
+    if not uids:  # the daily search: its numbers go on the public page
+        store.set_stats(at=now(), listings=len(jobs), sources=len({j["source"] for j in jobs}), scored=0)
+    scored = 0
 
     factory = browser_factory or _chromium
     liveness.reset_cache()
@@ -219,7 +222,7 @@ def run(store, cfg, uids=None, browser_factory=None):
                 passing = [j for j in jobs if filters.passes(j, ucfg)[0]]
                 prog.log(f"{len(passing)} match your job titles and locations", force=True)
                 profile = yaml.safe_load(udata["profile_yaml"])
-                run_user(store, ucfg, uid, profile, passing, browser, prog, cost)
+                scored += run_user(store, ucfg, uid, profile, passing, browser, prog, cost)
                 prog.finish(0)
             except Exception as e:  # noqa: BLE001 - one user's failure shouldn't stop the others
                 prog.log(f"ERROR: {type(e).__name__}: {e}", force=True)
@@ -228,6 +231,8 @@ def run(store, cfg, uids=None, browser_factory=None):
                 day = datetime.now().strftime("%Y-%m-%d")
                 store.add_usage(uid, day[:7], runs=1, cost_usd=round(cost.usd, 4))
                 store.add_usage(uid, day, cost_usd=round(cost.usd, 4))
+    if not uids:
+        store.set_stats(scored=scored)
 
 
 class _chromium:
@@ -284,6 +289,7 @@ def run_user(store, cfg, uid, profile, passing, browser, prog, cost=None):
     if len(queued) > len(rows):
         prog.log(f"{len(queued) - len(rows)} lower-ranked jobs wait for the next run")
     prog.log(f"Scoring {len(rows)} jobs with {cfg['model_score']}...")
+    scored = 0
     for r in rows:
         try:
             s = score_job(r, profile, cfg["model_score"])
@@ -293,6 +299,7 @@ def run_user(store, cfg, uid, profile, passing, browser, prog, cost=None):
             prog.log(f"  ERROR scoring {r['company']}: {e}")
             continue
         cost.add(cfg["model_score"], s.pop("_usage", None))
+        scored += 1
         status = "scored" if s["score"] >= cfg["min_score"] and not s["dealbreakers"] else "low_score"
         store.update_job(uid, r["id"], score=s["score"], score_json=s, status=status)
         prog.log(f"  {'✓' if status == 'scored' else ' '} {s['score']:3d}  {r['company'][:18]:18s} {r['title'][:50]}")
@@ -332,6 +339,7 @@ def run_user(store, cfg, uid, profile, passing, browser, prog, cost=None):
     prog.log(f"Done. {len(new)} new prospect(s)" + (":" if new else "."), force=True)
     for r in new:
         prog.log(f"  {r['score']:3d}  {r['company'][:20]:20s} {r['title'][:50]}")
+    return scored
 
 
 def load_cfg():

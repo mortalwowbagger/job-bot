@@ -6,6 +6,8 @@ Layout (everything is per user, so friends can be added later):
   users/{uid}/usage/{YYYY-MM[-DD]} runs, manual_runs, cost_usd (cost guardrails)
   ext_tokens/{sha256(token)}       uid, created_at, last_used (browser-extension keys; only hashes stored)
   stripe_customers/{customer_id}   uid (maps Stripe webhooks back to a user)
+  feedback/{id}                    at, message, reply_to, uid, email (contact form; owner reads it on the Users screen)
+  stats/latest                     at, listings, sources, scored (last daily search; shown on the public page)
   users/{uid}/jobs/{job_id}        one prospect or application (only jobs that
                                    passed the free filters are stored)
   users/{uid}/jobs/{job_id}/events timeline entries
@@ -91,9 +93,30 @@ class FirestoreStore:
             n += 1
         return n
 
+    # --- contact form + public stats
+    def add_feedback(self, data):
+        return self.db.collection("feedback").add({**data, "at": now()})[1].id
+
+    def list_feedback(self, limit=100):
+        from google.cloud import firestore
+        q = self.db.collection("feedback").order_by("at", direction=firestore.Query.DESCENDING).limit(limit)
+        return [{**s.to_dict(), "id": s.id} for s in q.stream()]
+
+    def delete_feedback(self, fid):
+        self.db.collection("feedback").document(fid).delete()
+
+    def set_stats(self, **fields):
+        self.db.collection("stats").document("latest").set(fields, merge=True)
+
+    def get_stats(self):
+        snap = self.db.collection("stats").document("latest").get()
+        return snap.to_dict() if snap.exists else {}
+
     def delete_user_data(self, uid):
-        """Everything: jobs, timelines, runs, usage, profile, settings, PDFs, extension keys."""
+        """Everything: jobs, timelines, runs, usage, profile, settings, PDFs, extension keys, messages."""
         self.delete_ext_tokens(uid)
+        for snap in self.db.collection("feedback").where("uid", "==", uid).stream():
+            snap.reference.delete()
         self.db.recursive_delete(self._user(uid))
         if self.bucket:
             for blob in self.bucket.list_blobs(prefix=f"users/{uid}/"):
@@ -170,6 +193,7 @@ class MemoryStore:
         self.users, self.jobsd, self.eventsd, self.files, self.runs, self.usage = {}, {}, {}, {}, {}, {}
         self.ext = {}
         self.stripe_customers = {}
+        self.feedback, self.stats = {}, {}
 
     def get_user(self, uid):
         return self.users.get(uid)
@@ -216,8 +240,27 @@ class MemoryStore:
             self.ext.pop(h)
         return len(gone)
 
+    def add_feedback(self, data):
+        fid = f"fb{len(self.feedback) + 1}"
+        self.feedback[fid] = {**data, "at": now()}
+        return fid
+
+    def list_feedback(self, limit=100):
+        rows = [{**d, "id": k} for k, d in self.feedback.items()]
+        return sorted(rows, key=lambda r: (r["at"], r["id"]), reverse=True)[:limit]
+
+    def delete_feedback(self, fid):
+        self.feedback.pop(fid, None)
+
+    def set_stats(self, **fields):
+        self.stats.update(fields)
+
+    def get_stats(self):
+        return dict(self.stats)
+
     def delete_user_data(self, uid):
         self.delete_ext_tokens(uid)
+        self.feedback = {k: d for k, d in self.feedback.items() if d.get("uid") != uid}
         self.users.pop(uid, None)
         self.runs.pop(uid, None)
         for d in (self.jobsd, self.eventsd, self.usage):
