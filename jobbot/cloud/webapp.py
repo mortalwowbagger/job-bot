@@ -93,7 +93,7 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
     from .. import settings as st
     from . import billing
     cloud_cfg = cloud_cfg or {}
-    PUBLIC = {"/", "/health", "/api/stripe/webhook", "/terms", "/privacy", "/api/feedback", "/robots.txt", "/sitemap.xml"}
+    PUBLIC = {"/", "/health", "/blog", "/api/stripe/webhook", "/terms", "/privacy", "/api/feedback", "/robots.txt", "/sitemap.xml"}
     launched = cloud_cfg.get("launched", True)  # False = pre-launch: approval-only sign-up, hidden from search engines
     open_signup = launched and cloud_cfg.get("signup", "open") == "open"
     app = Flask(__name__)
@@ -121,7 +121,7 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
 
     @app.before_request
     def auth():
-        if request.path in PUBLIC:
+        if request.path in PUBLIC or request.path.startswith("/blog/"):
             return None
         header = request.headers.get("Authorization", "")
         if not header.startswith("Bearer "):
@@ -236,9 +236,29 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
         from .. import legal
         return Response(legal.page("Privacy Policy", legal.PRIVACY, launched), mimetype="text/html")
 
+    def published_posts():
+        from .. import blog
+        return blog.load() if launched else []  # nothing on the blog is public before launch
+
+    @app.get("/blog")
+    def blog_index():
+        from .. import blog
+        posts = published_posts()
+        if not posts:
+            abort(404)
+        return Response(blog.index_page(posts, launched), mimetype="text/html")
+
+    @app.get("/blog/<slug>")
+    def blog_post(slug):
+        from .. import blog
+        post = next((p for p in published_posts() if p["slug"] == slug), None)
+        if not post:
+            abort(404)
+        return Response(blog.article_page(post, base_url, launched), mimetype="text/html")
+
     @app.get("/robots.txt")
     def robots():
-        rules = (f"Allow: /$\nAllow: /og.png\nAllow: /terms\nAllow: /privacy\nDisallow: /api/\nSitemap: {base_url}/sitemap.xml\n" if launched
+        rules = (f"Allow: /$\nAllow: /og.png\nAllow: /terms\nAllow: /privacy\nAllow: /blog\nDisallow: /api/\nSitemap: {base_url}/sitemap.xml\n" if launched
                  else "Disallow: /\n")  # pre-launch: keep the site out of search results
         return Response("User-agent: *\n" + rules, mimetype="text/plain")
 
@@ -247,7 +267,10 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
         if not launched:
             abort(404)
         return Response('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
-                        f"<url><loc>{base_url}/</loc></url></urlset>\n", mimetype="application/xml")
+                        f"<url><loc>{base_url}/</loc></url>"
+                        + "".join(f"<url><loc>{base_url}/blog/{p['slug']}</loc><lastmod>{p['date']}</lastmod></url>"
+                                  for p in published_posts())
+                        + "</urlset>\n", mimetype="application/xml")
 
     @app.post("/api/feedback")
     def feedback():

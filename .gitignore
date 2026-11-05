@@ -13,4 +13,7 @@ tracker.csv
 .claude/
 profile.yaml.bak
 .firebase/
+# launch research + draft articles: local only (approved articles go in jobbot/content/blog)
+docs/launch/*
+!docs/launch/README.md
 hosting_public/*.zip

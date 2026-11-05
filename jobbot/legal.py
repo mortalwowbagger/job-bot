@@ -118,8 +118,10 @@ TERMS = f"""
 """
 
 
-def page(title, body, launched=True):
+def page(title, body, launched=True, description=""):
     robots = "" if launched else '<meta name="robots" content="noindex, nofollow">'
+    if description:
+        robots += f'<meta name="description" content="{html.escape(description)}">'
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">{robots}
 <title>{html.escape(title)} - job-bot</title>
