@@ -39,7 +39,7 @@ done
 gc run jobs deploy jobbot-run --image="$IMAGE" --region="$REGION" --service-account="$SA" \
   --command=python,-m,jobbot.cloud.pipeline --env-vars-file="$ENVFILE" \
   --set-secrets="$SECRETS" \
-  --memory=2Gi --cpu=1 --task-timeout=60m --max-retries=0
+  --memory=2Gi --cpu=1 --task-timeout=120m --max-retries=0
 
 echo "== Web service"
 WEB_SECRETS=ANTHROPIC_API_KEY=anthropic-api-key:latest

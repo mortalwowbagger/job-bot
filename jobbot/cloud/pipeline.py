@@ -215,28 +215,38 @@ def run(store, cfg, uids=None, browser_factory=None):
 
     factory = browser_factory or _chromium
     liveness.reset_cache()
-    with factory() as browser:
-        for uid, udata in users:
-            prog = progs[uid]
-            cost = Cost()
-            try:
-                ucfg = user_cfg(cfg, udata)
-                if not ucfg["title_include"]:
-                    raise ValueError("Add the job titles you want in Settings first.")
-                passing = [j for j in jobs if filters.passes(j, ucfg)[0]]
-                prog.log(f"{len(passing)} match your job titles and locations", force=True)
-                profile = yaml.safe_load(udata["profile_yaml"])
-                scored += run_user(store, ucfg, uid, profile, passing, browser, prog, cost)
-                prog.finish(0)
-            except Exception as e:  # noqa: BLE001 - one user's failure shouldn't stop the others
-                prog.log(f"ERROR: {type(e).__name__}: {e}", force=True)
-                prog.finish(1)
-                failed.append({"email": udata.get("email") or uid, "error": f"{type(e).__name__}: {str(e)[:200]}"})
-            finally:
-                day = datetime.now().strftime("%Y-%m-%d")
-                store.add_usage(uid, day[:7], runs=1, cost_usd=round(cost.usd, 4))
-                store.add_usage(uid, day, cost_usd=round(cost.usd, 4))
-                total_cost += cost.usd
+
+    def one(uid, udata):
+        """One person's scoring + tailoring, with their own PDF browser. Returns (scored, cost, failure)."""
+        prog, cost, n, fail = progs[uid], Cost(), 0, None
+        try:
+            ucfg = user_cfg(cfg, udata)
+            if not ucfg["title_include"]:
+                raise ValueError("Add the job titles you want in Settings first.")
+            passing = [j for j in jobs if filters.passes(j, ucfg)[0]]
+            prog.log(f"{len(passing)} match your job titles and locations", force=True)
+            profile = yaml.safe_load(udata["profile_yaml"])
+            with factory() as browser:
+                n = run_user(store, ucfg, uid, profile, passing, browser, prog, cost)
+            prog.finish(0)
+        except Exception as e:  # noqa: BLE001 - one user's failure shouldn't stop the others
+            prog.log(f"ERROR: {type(e).__name__}: {e}", force=True)
+            prog.finish(1)
+            fail = {"email": udata.get("email") or uid, "error": f"{type(e).__name__}: {str(e)[:200]}"}
+        finally:
+            day = datetime.now().strftime("%Y-%m-%d")
+            store.add_usage(uid, day[:7], runs=1, cost_usd=round(cost.usd, 4))
+            store.add_usage(uid, day, cost_usd=round(cost.usd, 4))
+        return n, cost.usd, fail
+
+    # several people at once: the work is mostly waiting on the AI API (job limit: deploy.sh --task-timeout)
+    from concurrent.futures import ThreadPoolExecutor
+    workers = max(1, int((cfg.get("cloud") or {}).get("run_workers", 4)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for n, usd, fail in pool.map(lambda u: one(*u), users):
+            scored, total_cost = scored + n, total_cost + usd
+            if fail:
+                failed.append(fail)
     if not uids:  # owner's health panel (Users screen); only listings/sources/scored reach the public page
         store.set_stats(scored=scored, finished=now(), failed=failed, cost_usd=round(total_cost, 2))
 
