@@ -269,6 +269,37 @@ class TestWebapp(unittest.TestCase):
         self.assertIn('href="/privacy"', home)
         self.assertNotIn("@gmail", self.c.get("/privacy").data.decode())   # contact is the form, not an address
 
+    def test_waitlist_and_quotes_only_show_real_data(self):
+        from jobbot import landing
+        store = MemoryStore()
+        cloud = {**CFG["cloud"], "launched": False, "waitlist_min": 3, "testimonials": []}
+        page = lambda: create_app(store, lambda t: {}, lambda u: None, cloud_cfg=cloud).test_client().get("/").data.decode()
+        html = page()
+        self.assertNotIn("in line for access", html)
+        self.assertNotIn('id="quotes"', html)
+        self.assertNotIn(landing.WAIT_MARK, html)
+        for i in range(3):
+            store.ensure_user(f"p{i}", f"p{i}@example.com", access="pending")
+        cloud["testimonials"] = [{"quote": "Saved me hours.", "name": "Dana", "role": "QA engineer"}]
+        html = page()
+        self.assertIn("<b>3</b> people in line for access", html)
+        self.assertIn("Dana, QA engineer", html)
+
+    def test_meta_and_schema_match_the_page(self):
+        import json, re
+        from jobbot import landing
+        self.assertLess(len(landing.DESCRIPTION), 155)
+        html = self.c.get("/").data.decode()
+        data = json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.S).group(1))
+        types = {n["@type"]: n for n in data["@graph"]}
+        self.assertEqual({"WebApplication", "Organization", "FAQPage"}, set(types))
+        self.assertEqual([q["name"] for q in types["FAQPage"]["mainEntity"]], [q for q, _ in landing.FAQ])
+        import html as html_mod
+        for q, _ in landing.FAQ:
+            self.assertIn("<summary>" + html_mod.escape(q) + "</summary>", html)
+        pro = [o for o in types["WebApplication"]["offers"] if o["name"] == "Pro"][0]
+        self.assertEqual((pro["price"], pro["availability"]), ("15", "https://schema.org/PreOrder"))
+
     def test_prelaunch_lock(self):
         store = MemoryStore()
         people = {"friend": {"uid": "f", "email": "friend@example.com"}}

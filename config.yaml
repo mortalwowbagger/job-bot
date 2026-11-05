@@ -239,6 +239,8 @@ cloud:
   owner_runs_per_day: 10        # your manual "Run search" presses per day (the 7am run is extra)
   run_workers: 4                # people processed at the same time in a search (each gets its own PDF browser)
   imports_per_day: 5            # resume-PDF imports per person per day (each is a paid AI call; the owner is unlimited)
+  waitlist_min: 10              # pre-launch: show "N people in line for access" once N reaches this
+  testimonials: []              # real users' words only, with permission: - {quote: "...", name: "Dana", role: "QA engineer"}
   operator:                     # shown on the public page ("built and run by ..."); leave name empty to hide
     name: ""
     role: ""

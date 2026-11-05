@@ -18,9 +18,10 @@ def render(cfg, landing=None):
     if cfg["hosted"] and landing is not None:
         start, end = page.index('<div id="login">'), page.index('<div id="pending"')
         page = (page[:start] + lp.body(landing.get("plans"), landing.get("payments_enabled"), landing.get("operator"),
-                         landing.get("launched", True))
+                         landing.get("launched", True), landing.get("quotes"))
                 + "\n" + page[end:])
-        page = page.replace("<title>job-bot</title>", f"<title>{lp.TITLE}</title>\n" + lp.head(landing.get("base_url", ""), landing.get("launched", True)))
+        page = page.replace("<title>job-bot</title>", f"<title>{lp.TITLE}</title>\n" + lp.head(landing.get("base_url", ""), landing.get("launched", True), landing.get("plans"),
+                                                                   landing.get("payments_enabled")))
         page = page.replace("</style>", lp.CSS + "</style>", 1)
     # </ can't appear inside the inline JSON (it would end the <script> tag)
     return page.replace("__CFG__", json.dumps(cfg).replace("</", "<\\/")).replace("__SDK__", FIREBASE_SDK)

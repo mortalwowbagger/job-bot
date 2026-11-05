@@ -14,12 +14,29 @@ SOURCES = ["Greenhouse", "Lever", "Ashby", "SmartRecruiters", "Workable", "Recru
 REPO = "https://github.com/mortalwowbagger/job-bot"
 
 TITLE = "job-bot: a daily job search that never invents your experience"
-DESCRIPTION = ("job-bot searches 10 job sources every morning, scores each role against your real background, "
-               "and drafts tailored resumes and cover letters using only facts from your profile. "
-               "You review everything and submit it yourself.")
+DESCRIPTION = ("A daily job search that scores roles against your real background and drafts resumes "
+               "using only facts from your profile. You review and submit.")  # < 155 chars: Google shows it whole
+
+# One list feeds both the visible FAQ and its FAQPage schema.
+FAQ = [
+    ("Does job-bot apply to jobs for me?", "No. It finds jobs, prepares your documents and can fill an application "
+     "form in your browser, but you review it and click submit. That's deliberate."),
+    ("Will the AI make things up on my resume?", "It's only allowed to use what's in your profile, and job-bot checks "
+     "its drafts in code: skills you don't list are removed, and numbers or tools that aren't in your profile are "
+     "flagged for you to verify."),
+    ("Which job boards does it search?", ", ".join(SOURCES) + ", plus any company careers pages you add. No LinkedIn "
+     "or Indeed scraping (it breaks their terms and gets accounts banned)."),
+    ("Is it only for tech jobs?", "No. You choose the job titles, so it works for marketing, data, HR, healthcare "
+     "and more. It started with QA and engineering roles, where coverage is deepest."),
+    ("Who isn't job-bot for?", "If you want a bot that sends hundreds of applications for you without you reading "
+     "them, job-bot isn't it. It's for people who want fewer, better applications and to check each one."),
+    ("Does it answer work-authorization, salary or demographic questions?", "Never. Those are always left for you."),
+    ("Is it free?", "Yes, there's a free plan with a weekly search. Pro adds a daily search, more tailored packets "
+     "and the browser extension."),
+]
 
 
-def head(base_url, launched=True):
+def head(base_url, launched=True, plans=None, payments_enabled=False):
     e = html.escape
     hidden = "" if launched else '<meta name="robots" content="noindex, nofollow">\n'
     return hidden + f"""<meta name="description" content="{e(DESCRIPTION)}">
@@ -29,19 +46,45 @@ def head(base_url, launched=True):
 <meta property="og:image" content="{e(base_url)}/og.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{e(TITLE)}">
 <meta name="twitter:description" content="{e(DESCRIPTION)}"><meta name="twitter:image" content="{e(base_url)}/og.png">
-<script type="application/ld+json">{_schema(base_url)}</script>"""
+<script type="application/ld+json">{_schema(base_url, plans, payments_enabled)}</script>"""
 
 
-def _schema(base_url):
-    """schema.org description for search engines and AI assistants (facts only: no ratings or review counts)."""
-    data = {"@context": "https://schema.org", "@type": "WebApplication", "name": "job-bot", "url": f"{base_url}/",
-            "description": DESCRIPTION, "applicationCategory": "BusinessApplication", "operatingSystem": "Web",
-            "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "isAccessibleForFree": True,
-            "codeRepository": REPO}
+def _schema(base_url, plans=None, payments_enabled=False):
+    """schema.org description for search engines and AI assistants (facts only: no ratings or review counts).
+    Offers match the visible pricing; Pro is a pre-order until payments are switched on."""
+    offers = [{"@type": "Offer", "name": "Free", "price": "0", "priceCurrency": "USD"}]
+    pro = (plans or {}).get("pro") or {}
+    if pro.get("price_monthly_usd"):
+        offers.append({"@type": "Offer", "name": "Pro", "price": str(pro["price_monthly_usd"]), "priceCurrency": "USD",
+                       "availability": "https://schema.org/" + ("InStock" if payments_enabled else "PreOrder")})
+    data = {"@context": "https://schema.org", "@graph": [
+        {"@type": "WebApplication", "name": "job-bot", "url": f"{base_url}/", "description": DESCRIPTION,
+         "applicationCategory": "BusinessApplication", "operatingSystem": "Web", "offers": offers,
+         "isAccessibleForFree": True, "publisher": {"@id": f"{base_url}/#org"}},
+        {"@type": "Organization", "@id": f"{base_url}/#org", "name": "job-bot", "url": f"{base_url}/", "sameAs": [REPO]},
+        {"@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": q, "acceptedAnswer":
+                                              {"@type": "Answer", "text": a}} for q, a in FAQ]}]}
     return json.dumps(data).replace("</", "<\\/")
 
 
 LIVE_MARK = "<!--live-stats-->"
+WAIT_MARK = "<!--waitlist-->"
+
+
+def waitlist_line(waiting, minimum=10):
+    """Real count of people waiting for access (pre-launch), shown once it's big enough to mean something."""
+    return f'<p class="lp-wait"><b>{waiting:,}</b> people in line for access.</p>' if waiting >= minimum else ""
+
+
+def quotes_section(quotes):
+    """Real users' quotes from config (cloud.testimonials). Hidden while there are none; never filled in for you."""
+    rows = [q for q in (quotes or []) if q.get("quote") and q.get("name")]
+    if not rows:
+        return ""
+    e = html.escape
+    cards = "".join(f'<figure class="lp-q"><blockquote>"{e(q["quote"])}"</blockquote><figcaption>{e(q["name"])}'
+                    + (f", {e(q['role'])}" if q.get("role") else "") + "</figcaption></figure>" for q in rows[:6])
+    return f'\n  <section id="quotes" class="lp-sec"><h2>From people using it</h2><div class="lp-quotes">{cards}</div></section>'
 
 
 def live_line(stats, today=None):
@@ -86,6 +129,13 @@ EXAMPLE = """
           money. Your team's focus on refunds and disputes is the part of payments I like testing most.</p>
         <p class="meta">Plus a cover letter and PDFs ready to attach. Edit anything; nothing is sent until you submit.</p></div>
     </div>
+    <figure class="lp-shots">
+      <img class="lp-shot-wide" src="/shot-matches.jpg" width="2560" height="1520" loading="lazy"
+        alt="job-bot's review screen: a list of matched jobs with scores, and the selected job showing a check-before-submitting warning, why it matches, concerns and a drafted answer">
+      <img class="lp-shot-phone" src="/shot-phone.jpg" width="780" height="1688" loading="lazy"
+        alt="The same job on a phone: score 86, Open application button, the k6 warning to check, and reasons it matches">
+      <figcaption class="meta">The real app, filled with the example above (made-up data).</figcaption>
+    </figure>
   </section>"""
 
 CONTACT = """
@@ -117,7 +167,7 @@ def _plan_list(p):
     return "".join(f"<li>{html.escape(r)}</li>" for r in rows)
 
 
-def body(plans=None, payments_enabled=False, operator=None, launched=True):
+def body(plans=None, payments_enabled=False, operator=None, launched=True, quotes=None):
     e = html.escape
     plans = plans or {}
     free, pro = plans.get("free") or {}, plans.get("pro") or {}
@@ -137,6 +187,7 @@ def body(plans=None, payments_enabled=False, operator=None, launched=True):
         op = f"<p><b>Who runs this:</b> built and run by {e(operator['name'])}{link}" + \
              (f", {e(operator['role'])}" if operator.get("role") else "") + ". Questions or problems: reach out directly.</p>"
     chips = "".join(f"<span>{e(s)}</span>" for s in SOURCES)
+    faq = "\n    ".join(f"<details><summary>{e(q)}</summary><p>{e(a)}</p></details>" for q, a in FAQ)
     cta = "Start free with Google" if launched else "Sign in to request access"
     invite = "" if launched else ('<p class="lp-invite">job-bot is invite-only while it\'s being finished. '
                                   "Sign in with Google to request access; you'll get in once you're approved.</p>")
@@ -146,13 +197,14 @@ def body(plans=None, payments_enabled=False, operator=None, launched=True):
     <button class="primary" onclick="signIn()">Sign in</button></header>
 
   <section class="lp-hero">
+    <p class="lp-eyebrow">For QA engineers and SDETs first, coverage deepest where you need it.</p>
     <h1>A daily job search that never invents your experience.</h1>
     <p class="lp-sub">job-bot scans 10 job sources every morning, scores each role against your real background,
       and drafts a tailored resume and cover letter using <b>only facts from your profile</b>.
       You review everything and <b>click submit yourself</b>.</p>
     <p><button class="primary lp-cta" onclick="signIn()">{cta}</button>
        <a class="btn" href="#example">See an example</a></p>
-    {invite}
+    {invite}{"" if launched else WAIT_MARK}
     <p class="meta lp-agree">By signing in you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p>
     <p class="meta" id="loginerr"></p>
     {LIVE_MARK}
@@ -178,12 +230,13 @@ def body(plans=None, payments_enabled=False, operator=None, launched=True):
       <li><b>Upload your resume.</b> job-bot turns it into your profile, and you check every line. That profile is all the AI is allowed to use.</li>
       <li><b>Pick job titles and places.</b> Remote, your city, or both. Add companies you want to watch.</li>
       <li><b>Wake up to matches.</b> Each job gets a score with reasons and concerns, plus a tailored resume, cover letter and draft answers.</li>
-      <li><b>Apply on your terms.</b> Open the application, let the browser extension fill your details and attach the PDFs, review, and submit.</li>
-      <li><b>Track it.</b> Applied, interviewing, offers, follow-ups and notes, in one place on your phone or laptop.</li>
+      <li><b>Apply on your terms.</b> Stop retyping your work history into yet another ATS form. Let the extension fill it; you check and submit.</li>
+      <li><b>Track it.</b> Applied, interviewing, offers, follow-ups and notes, in one place on your phone or laptop instead of a spreadsheet.</li>
     </ol>
     <p class="meta">Searches: <span class="lp-chips">{chips}</span></p>
   </section>
-{EXAMPLE}
+{EXAMPLE}{quotes_section(quotes)}
+  <p class="lp-midcta">See this with your own profile. <button class="primary" onclick="signIn()">{cta}</button></p>
 {pricing}
   <section class="lp-sec"><h2>Plain talk about your data</h2>
     <p>Your profile, resumes and applications are stored in this job-bot's private Google Cloud project. The person who
@@ -196,19 +249,7 @@ def body(plans=None, payments_enabled=False, operator=None, launched=True):
   </section>
 
   <section id="faq" class="lp-sec"><h2>Questions</h2>
-    <details><summary>Does job-bot apply to jobs for me?</summary><p>No. It finds jobs, prepares your documents and can
-      fill an application form in your browser, but you review it and click submit. That's deliberate.</p></details>
-    <details><summary>Will the AI make things up on my resume?</summary><p>It's only allowed to use what's in your
-      profile, and job-bot checks its drafts in code: skills you don't list are removed, and numbers or tools that
-      aren't in your profile are flagged for you to verify.</p></details>
-    <details><summary>Which job boards does it search?</summary><p>{e(", ".join(SOURCES))}, plus any company careers
-      pages you add. No LinkedIn or Indeed scraping (it breaks their terms and gets accounts banned).</p></details>
-    <details><summary>Is it only for tech jobs?</summary><p>No. You choose the job titles, so it works for marketing,
-      data, HR, healthcare and more. It started with QA and engineering roles, where coverage is deepest.</p></details>
-    <details><summary>Does it answer work-authorization, salary or demographic questions?</summary><p>Never. Those are
-      always left for you.</p></details>
-    <details><summary>Is it free?</summary><p>Yes, there's a free plan with a weekly search. Pro adds a daily search,
-      more tailored packets and the browser extension.</p></details>
+    {faq}
   </section>
 
 {CONTACT}
@@ -241,8 +282,14 @@ CSS = """
 .lp-plan h3{margin:0;font-size:18px;text-transform:none;letter-spacing:0;color:var(--ink)}
 .lp-pro{border-color:var(--accent)}.lp-price{font-size:22px;font-weight:700;margin:6px 0}
 .lp-plan ul{padding-left:18px;margin:8px 0}
-#faq details{border-bottom:1px solid var(--line);padding:10px 0}#faq summary{cursor:pointer;font-weight:600}
+#faq details{border-bottom:1px solid var(--line);padding:10px 0}#faq details[open] summary{margin-bottom:4px}#faq summary{cursor:pointer;font-weight:600}
 .lp-end{text-align:center}.lp-foot{padding-top:18px;border-top:1px solid var(--line)}
+.lp-eyebrow{font-size:14px;font-weight:600;color:var(--accent);margin:0 0 10px}
+.lp-midcta{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:4px 0 26px;font-weight:600}
+.lp-wait{margin:8px 0 0;font-size:14px}
+.lp-quotes{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.lp-q{margin:0;border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--panel)}
+.lp-q blockquote{margin:0 0 8px}.lp-q figcaption{color:var(--muted);font-size:13px}
 .lp-live{display:flex;gap:8px;align-items:baseline;font-size:14px;color:var(--muted);margin:14px 0 0}
 .lp-dot{width:8px;height:8px;border-radius:50%;background:var(--good,#2e9d5b);flex:none}
 .lp-ex{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:16px;margin-top:10px}
@@ -252,6 +299,9 @@ CSS = """
 #login.landing .lp-ex h4{margin:12px 0 4px;font-size:13px;text-transform:none;letter-spacing:0;color:var(--ink)}
 .lp-ex ul{margin:0;padding-left:18px}.lp-ex li{margin:3px 0}
 .lp-quote{margin:4px 0;padding:6px 10px;border-left:3px solid var(--line);font-style:italic}
+.lp-shots{margin:16px 0 0;display:grid;grid-template-columns:3fr 1fr;gap:14px;align-items:start}
+.lp-shots img{width:100%;height:auto;border:1px solid var(--line);border-radius:10px;display:block}
+.lp-shots figcaption{grid-column:1/-1}
 .lp-ex-foot{border-top:1px solid var(--line);margin-top:12px}
 .lp-form{display:grid;gap:8px;max-width:560px}.lp-form textarea,.lp-form input{width:100%;box-sizing:border-box;font:inherit;padding:8px 10px;border:1px solid var(--line);
   border-radius:8px;background:var(--panel);color:var(--ink)}
@@ -259,5 +309,8 @@ CSS = """
 .lp-invite{border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:8px;padding:8px 12px;
   background:var(--panel);font-size:14px;max-width:620px}
 html.signed-in #login.landing{display:none}
-@media (max-width:800px){.lp-pillars,.lp-plans,.lp-ex-grid{grid-template-columns:1fr}.lp-top a{display:none}.lp-hero{padding-top:24px}}
+@media (pointer:coarse),(max-width:800px){#login.landing button,#login.landing .btn{min-height:44px}
+  #faq summary{padding:12px 0}.lp-foot a{display:inline-block;padding:14px 4px}}
+@media (max-width:800px){.lp-shots{grid-template-columns:1fr;max-width:340px;margin-inline:auto}.lp-shot-wide{display:none!important}
+  .lp-pillars,.lp-plans,.lp-ex-grid{grid-template-columns:1fr}.lp-top a{display:none}.lp-hero{padding-top:24px}}
 """

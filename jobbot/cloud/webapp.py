@@ -104,7 +104,7 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
     page = render({"hosted": True, "firebase": firebase_config or {}}, landing={
         "plans": cloud_cfg.get("plans"), "operator": cloud_cfg.get("operator"), "base_url": base_url,
         "payments_enabled": bool(stripe_client and (cloud_cfg.get("stripe") or {}).get("price_monthly")),
-        "launched": launched})
+        "launched": launched, "quotes": cloud_cfg.get("testimonials")})
     counts_cache = {}
     feedback_log = {}  # ip -> recent send times (simple spam brake; per server instance)
     stats_cache = []
@@ -212,8 +212,16 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
                 stats = store.get_stats()
             except Exception:  # noqa: BLE001 - the page must load even if stats can't
                 stats = {}
-            stats_cache[:] = [time.time(), lp.live_line(stats)]
-        resp = Response(page.replace(lp.LIVE_MARK, stats_cache[1], 1), mimetype="text/html")
+            waiting = 0
+            if not launched:
+                try:
+                    waiting = sum(1 for _, d in store.list_users() if (d.get("access") or "pending") == "pending")
+                except Exception:  # noqa: BLE001
+                    pass
+            stats_cache[:] = [time.time(), lp.live_line(stats),
+                              lp.waitlist_line(waiting, cloud_cfg.get("waitlist_min", 10))]
+        resp = Response(page.replace(lp.LIVE_MARK, stats_cache[1], 1).replace(lp.WAIT_MARK, stats_cache[2], 1),
+                        mimetype="text/html")
         if not launched:
             resp.headers["X-Robots-Tag"] = "noindex, nofollow"
         return resp
