@@ -237,6 +237,7 @@ cloud:
   signup: open                  # open: anyone with a Google account gets in | approval: you approve on the Users screen
   monthly_budget_usd: 25        # estimated Claude API spend cap for FREE users combined; their runs pause when reached
   owner_runs_per_day: 10        # your manual "Run search" presses per day (the 7am run is extra)
+  imports_per_day: 5            # resume-PDF imports per person per day (each is a paid AI call; the owner is unlimited)
   operator:                     # shown on the public page ("built and run by ..."); leave name empty to hide
     name: ""
     role: ""

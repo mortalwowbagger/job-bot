@@ -78,6 +78,8 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(len(store.jobsd), 2)
         stats = store.get_stats()      # the daily search records numbers for the public page
         self.assertEqual((stats["listings"], stats["sources"]), (len(fake_jobs()), 2))
+        self.assertTrue(stats["finished"])
+        self.assertEqual((stats["users"], stats["failed"], stats["error"]), (1, [], None))
 
     def test_only_approved_users_with_profiles_run(self):
         store = MemoryStore()
@@ -109,6 +111,21 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(store.jobsd, {})
         self.run_once(store, uids=["f1"])      # pressed Run: runs
         self.assertTrue(store.jobsd)
+
+    def test_health_records_failures(self):
+        store = MemoryStore()
+        self.owner(store)
+        store.ensure_user("f1", "friend@example.com", access="approved", last_seen=pipeline.now(), comp=True,
+                          settings={"title_keywords": ["sdet"]})          # Pro: in every daily search
+        store.set_profile("f1", "contact: [broken")   # a profile that can't be read
+        self.run_once(store)
+        failed = store.get_stats()["failed"]
+        self.assertEqual([f["email"] for f in failed], ["friend@example.com"])
+        c = create_app(store, lambda t: {"uid": "u1", "email": "u1@example.com"}, lambda u: None,
+                       admin_emails=["u1@example.com"], cloud_cfg=CFG["cloud"]).test_client()
+        h = c.get("/api/admin/health", headers={"Authorization": "Bearer x"}).get_json()
+        self.assertEqual(h["daily"]["failed"][0]["email"], "friend@example.com")
+        self.assertIn("month_cost", h)
 
     def test_missing_title_keywords_is_explained(self):
         store = MemoryStore()
@@ -239,6 +256,18 @@ class TestWebapp(unittest.TestCase):
         self.assertNotIn(landing.LIVE_MARK, html)
         self.assertEqual(landing.live_line({"at": "2020-01-01T07:00:00", "listings": 5000, "sources": 9}), "")  # stale
         self.assertEqual(landing.live_line({"at": pipeline.now(), "listings": 40, "sources": 2}), "")          # too small
+
+    def test_terms_and_privacy_pages(self):
+        for path, bits in (("/terms", ["Terms of Service", "never applies to jobs", "cancel anytime"]),
+                           ("/privacy", ["Privacy Policy", "Anthropic", "Stripe", "Delete my data", "doesn't sell"])):
+            r = self.c.get(path)
+            self.assertEqual(r.status_code, 200)
+            for bit in bits:
+                self.assertIn(bit, r.data.decode())
+        home = self.c.get("/").data.decode()
+        self.assertIn('href="/terms"', home)
+        self.assertIn('href="/privacy"', home)
+        self.assertNotIn("@gmail", self.c.get("/privacy").data.decode())   # contact is the form, not an address
 
     def test_prelaunch_lock(self):
         store = MemoryStore()
@@ -417,6 +446,28 @@ class TestProfile(unittest.TestCase):
         self.assertTrue(any("Kubernetes" in f for f in flags))   # invented bullet + skill flagged
         self.assertTrue(any(f.startswith("Skill") and "Kubernetes" in f for f in flags))
         self.assertFalse(any("Appium tests" in f for f in flags))  # real bullet isn't
+
+    def test_resume_imports_are_capped_and_costed(self):
+        import io
+        from jobbot import profile as prof
+        store = MemoryStore()
+        who = {"friend": {"uid": "f", "email": "f@example.com"}, "owner": {"uid": "o", "email": "o@example.com"}}
+        c = create_app(store, who.__getitem__, lambda u: None, admin_emails=["o@example.com"],
+                       cloud_cfg={**CFG["cloud"], "imports_per_day": 2}).test_client()
+        pdf = lambda: {"pdf": (io.BytesIO(b"%PDF-1.4 resume"), "r.pdf")}
+        with mock.patch.dict(os.environ, {"JOBBOT_FAKE_LLM": "1"}), \
+             mock.patch.object(prof, "pdf_text", lambda d: self.RESUME):
+            codes = [c.post("/api/profile/import", data=pdf(), headers={"Authorization": "Bearer friend"}).status_code
+                     for _ in range(3)]
+            self.assertEqual(codes, [200, 200, 429])
+            self.assertEqual(c.post("/api/profile/import", data=pdf(),
+                                    headers={"Authorization": "Bearer owner"}).status_code, 200)  # owner: no cap
+            with mock.patch.object(prof, "pdf_text", lambda d: " "):   # unreadable PDF: no AI call, not counted
+                c.post("/api/profile/import", data=pdf(), headers={"Authorization": "Bearer owner"})
+        day = pipeline.datetime.now().strftime("%Y-%m-%d")
+        self.assertEqual(store.get_usage("f", day)["imports"], 2)
+        self.assertEqual(store.get_usage("o", day)["imports"], 1)
+        self.assertIn("cost_usd", store.get_usage("f", day[:7]))
 
     def test_import_rejects_unreadable_pdf_text(self):
         from jobbot import profile as prof

@@ -105,13 +105,16 @@ def unsupported(profile, text):
     return out
 
 
-def import_resume(text, current, model):
-    """Draft a profile from resume text. Keeps the user's targets (roles, dealbreakers...)."""
+def import_resume(text, current, model, usage=None):
+    """Draft a profile from resume text. Keeps the user's targets (roles, dealbreakers...).
+    usage: optional dict that receives the API token counts (for cost tracking)."""
     if len(text) < 200:
         raise ValueError("Couldn't read enough text from that PDF (is it a scanned image?).")
     draft = chat_json(model, IMPORT_SYSTEM, "RESUME TEXT:\n\n" + text[:40000], IMPORT_SCHEMA,
                       name="profile_import")
-    draft.pop("_usage", None)
+    spent = draft.pop("_usage", None)
+    if usage is not None and spent:
+        usage.update(spent)
     targets = (current or {}).get("targets") or DEFAULT_TARGETS
     ordered = {"contact": {**draft["contact"], "current_company":
                            (draft["experience"][0]["company"] if draft["experience"] else "")},

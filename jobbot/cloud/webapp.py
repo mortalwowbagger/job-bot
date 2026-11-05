@@ -218,9 +218,19 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
             resp.headers["X-Robots-Tag"] = "noindex, nofollow"
         return resp
 
+    @app.get("/terms")
+    def terms():
+        from .. import legal
+        return Response(legal.page("Terms of Service", legal.TERMS, launched), mimetype="text/html")
+
+    @app.get("/privacy")
+    def privacy():
+        from .. import legal
+        return Response(legal.page("Privacy Policy", legal.PRIVACY, launched), mimetype="text/html")
+
     @app.get("/robots.txt")
     def robots():
-        rules = (f"Allow: /$\nAllow: /og.png\nDisallow: /api/\nSitemap: {base_url}/sitemap.xml\n" if launched
+        rules = (f"Allow: /$\nAllow: /og.png\nAllow: /terms\nAllow: /privacy\nDisallow: /api/\nSitemap: {base_url}/sitemap.xml\n" if launched
                  else "Disallow: /\n")  # pre-launch: keep the site out of search results
         return Response("User-agent: *\n" + rules, mimetype="text/plain")
 
@@ -512,6 +522,18 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
         out.sort(key=lambda u: (order.get(u["access"], 3), u["email"] or ""))
         return jsonify(out)
 
+    @app.get("/api/admin/health")
+    def admin_health():
+        """Last 7am search + this month's spend, for the owner."""
+        admin_only()
+        stats = store.get_stats()
+        month = date.today().isoformat()[:7]
+        total = sum(store.get_usage(u, month).get("cost_usd", 0.0) for u, _ in store.list_users())
+        return jsonify(daily={k: stats.get(k) for k in ("at", "finished", "listings", "sources", "scored", "users",
+                                                       "failed", "cost_usd", "error")},
+                       month_cost=round(total, 2), free_budget_used=round(budget_used(), 2),
+                       free_budget=cloud_cfg.get("monthly_budget_usd", 25))
+
     @app.get("/api/admin/feedback")
     def admin_feedback():
         admin_only()
@@ -565,15 +587,32 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
         data = f.read()
         if not data.startswith(b"%PDF"):
             abort(400, "That doesn't look like a PDF.")
+        day = date.today().isoformat()
+        cap = cloud_cfg.get("imports_per_day", 5)
+        if not g.is_admin and store.get_usage(g.uid, day).get("imports", 0) >= cap:
+            return jsonify(error=f"That's {cap} resume imports today, the daily limit. You can still edit your "
+                                 "profile by hand, or import again tomorrow."), 429
+        usage = {}
         try:
             text = prof.pdf_text(data)
             current, _ = prof.validate((store.get_user(g.uid) or {}).get("profile_yaml") or "")
-            draft, flags = prof.import_resume(text, current, import_model)
-        except ValueError as e:
+            draft, flags = prof.import_resume(text, current, import_model, usage=usage)
+        except ValueError as e:  # unreadable PDF: stopped before any AI call, so it doesn't count
             abort(400, str(e))
         except Exception as e:  # noqa: BLE001 - PDF parser / LLM trouble
+            count_import(day, usage)
             return jsonify(error=f"Import failed: {type(e).__name__}: {str(e)[:200]}"), 502
+        count_import(day, usage)
         return jsonify(profile_yaml=draft, unsupported=flags)
+
+    def count_import(day, usage):
+        """Imports count toward the daily cap and (by estimated cost) toward the monthly budget."""
+        from .pipeline import Cost
+        cost = Cost()
+        cost.add(import_model, usage or None)
+        store.add_usage(g.uid, day, imports=1, cost_usd=round(cost.usd, 4))
+        store.add_usage(g.uid, day[:7], cost_usd=round(cost.usd, 4))
+        user_cache.pop("budget", None)
 
     @app.post("/api/jobs/<jid>/prefill")
     def prefill(jid):

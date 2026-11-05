@@ -153,6 +153,7 @@ def body(plans=None, payments_enabled=False, operator=None, launched=True):
     <p><button class="primary lp-cta" onclick="signIn()">{cta}</button>
        <a class="btn" href="#example">See an example</a></p>
     {invite}
+    <p class="meta lp-agree">By signing in you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p>
     <p class="meta" id="loginerr"></p>
     {LIVE_MARK}
   </section>
@@ -189,7 +190,7 @@ def body(plans=None, payments_enabled=False, operator=None, launched=True):
       runs it can technically access that data. Job descriptions and your profile are sent to Anthropic's API to score
       and tailor. That's it: no selling, no sharing with employers, no applying on your behalf.</p>
     <p><b>Delete everything, yourself, anytime:</b> one button in Settings removes your profile, settings, jobs,
-      applications and PDFs. job-bot is also <a href="{REPO}" rel="noopener" target="_blank">open source</a>,
+      applications and PDFs. The <a href="/privacy">Privacy Policy</a> has the details. job-bot is also <a href="{REPO}" rel="noopener" target="_blank">open source</a>,
       so you can read exactly what it does.</p>
     {op}
   </section>
@@ -214,7 +215,7 @@ def body(plans=None, payments_enabled=False, operator=None, launched=True):
 
   <section class="lp-sec lp-end"><h2>Spend your time on the applications worth sending.</h2>
     <p><button class="primary lp-cta" onclick="signIn()">{cta}</button></p></section>
-  <footer class="lp-foot meta"><a href="#contact">Contact</a> · <a href="{REPO}" rel="noopener" target="_blank">Open source on GitHub</a></footer>
+  <footer class="lp-foot meta"><a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="#contact">Contact</a> · <a href="{REPO}" rel="noopener" target="_blank">Open source on GitHub</a></footer>
 </div>"""
 
 

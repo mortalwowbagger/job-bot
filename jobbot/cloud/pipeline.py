@@ -203,11 +203,15 @@ def run(store, cfg, uids=None, browser_factory=None):
         broadcast(f"Fetching failed: {e}", force=True)
         for p in progs.values():
             p.finish(1)
+        if not uids:
+            store.set_stats(at=now(), listings=0, sources=0, scored=0, finished=now(), users=len(users),
+                            failed=[], cost_usd=0, error=f"Fetching failed: {type(e).__name__}: {str(e)[:300]}")
         raise
     broadcast(f"Fetched {len(jobs)} listings", force=True)
     if not uids:  # the daily search: its numbers go on the public page
-        store.set_stats(at=now(), listings=len(jobs), sources=len({j["source"] for j in jobs}), scored=0)
-    scored = 0
+        store.set_stats(at=now(), listings=len(jobs), sources=len({j["source"] for j in jobs}), scored=0,
+                        finished=None, users=len(users), failed=[], cost_usd=0, error=None)
+    scored, failed, total_cost = 0, [], 0.0
 
     factory = browser_factory or _chromium
     liveness.reset_cache()
@@ -227,12 +231,14 @@ def run(store, cfg, uids=None, browser_factory=None):
             except Exception as e:  # noqa: BLE001 - one user's failure shouldn't stop the others
                 prog.log(f"ERROR: {type(e).__name__}: {e}", force=True)
                 prog.finish(1)
+                failed.append({"email": udata.get("email") or uid, "error": f"{type(e).__name__}: {str(e)[:200]}"})
             finally:
                 day = datetime.now().strftime("%Y-%m-%d")
                 store.add_usage(uid, day[:7], runs=1, cost_usd=round(cost.usd, 4))
                 store.add_usage(uid, day, cost_usd=round(cost.usd, 4))
-    if not uids:
-        store.set_stats(scored=scored)
+                total_cost += cost.usd
+    if not uids:  # owner's health panel (Users screen); only listings/sources/scored reach the public page
+        store.set_stats(scored=scored, finished=now(), failed=failed, cost_usd=round(total_cost, 2))
 
 
 class _chromium:

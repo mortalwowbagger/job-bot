@@ -229,12 +229,14 @@ body.is-hosted .hosted{display:inline-flex} body.is-admin .admin{display:inline-
   <p class="meta">Goes to the person who runs job-bot, with your sign-in email so they can reply.</p>
   <textarea id="fbmsg" rows="3" maxlength="3000" placeholder="Your question, a bug, or an idea"></textarea>
   <div class="marks"><button type="button" onclick="sendFeedback()">Send</button><span class="meta" id="fbsent"></span></div></div>
+  <p class="meta hostedblk"><a href="/terms" target="_blank">Terms</a> · <a href="/privacy" target="_blank">Privacy Policy</a></p>
   <h3>Delete my data</h3>
   <p class="meta">Permanently deletes your profile, settings, prospects, applications, timelines and PDFs from job-bot.</p>
   <div class="note"><input id="delconfirm" placeholder="Type DELETE to confirm"><button type="button" onclick="deleteMe()">Delete everything</button></div>
   <p class="meta" id="delmsg"></p>
 </form></dialog>
 <dialog id="usersmodal" class="wide"><h2>Users</h2>
+  <div id="health" class="callout"></div>
   <p class="meta">Everyone who has signed in. Their runs use your Claude API key, within the per-person and
   monthly limits in config.yaml. Revoke anyone who shouldn't have access.</p>
   <div id="userlist"></div>
@@ -447,7 +449,15 @@ async function saveSettings(ev){ev.preventDefault();const f=$("setform");$("sete
     $("setsaved").textContent="Saved. The next run uses these."+((r.warnings||[]).length?" Note: "+r.warnings.join(" "):"");if(onboarding)$("setmodal").close();poll()}catch(e){$("seterr").textContent=e.message}}
 async function deleteMe(){try{await post("/api/me/delete",{confirm:$("delconfirm").value.trim()});$("delmsg").textContent="Deleted.";
   setTimeout(signOut,1200)}catch(e){$("delmsg").textContent=e.message}}
-async function openUsers(){await Promise.all([renderUsers(),renderFeedback()]);$("usersmodal").showModal()}
+async function openUsers(){await Promise.all([renderUsers(),renderFeedback(),renderHealth()]);$("usersmodal").showModal()}
+async function renderHealth(){let h;try{h=await api("/api/admin/health")}catch(e){$("health").textContent="Health: "+e.message;return}
+  const d=h.daily,bad='style="color:var(--bad)"';let line;
+  if(!d.at)line="<b>Daily search:</b> hasn't run yet.";
+  else{const late=(Date.now()-new Date(d.at))>26*36e5,fails=d.failed||[];
+    line=`<b>Daily search:</b> <span ${late?bad:""}>${ago(d.at)}${late?" (missed? it should run every morning)":""}</span>`+
+      (d.error?` · <span ${bad}>${esc(d.error)}</span>`:d.finished?` · ${(d.listings||0).toLocaleString()} listings, ${d.users} people, ${d.scored} scored, $${(d.cost_usd||0).toFixed(2)}`:" · still running or crashed")+
+      (fails.length?`<div ${bad}>Failed for: ${fails.map(f=>esc(f.email)+" ("+esc(f.error)+")").join("; ")}</div>`:"")}
+  $("health").innerHTML=line+`<div class="meta">This month: $${h.month_cost.toFixed(2)} total · free users $${h.free_budget_used.toFixed(2)} of $${h.free_budget} budget</div>`}
 async function renderUsers(){const us=await api("/api/admin/users");
   $("userlist").innerHTML=us.map(u=>`<div class="urow"><div class="who"><b>${esc(u.email)}</b>${u.is_admin?' <span class="tag">owner</span>':""}
     <div class="meta">${esc(u.access)}${u.requested_at?" · signed up "+fmt(u.requested_at):""}${u.last_seen?" · last seen "+ago(u.last_seen):""}
