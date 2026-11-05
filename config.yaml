@@ -236,6 +236,10 @@ cloud:
   signup: open                  # open: anyone with a Google account gets in | approval: you approve on the Users screen
   monthly_budget_usd: 25        # estimated Claude API spend cap for FREE users combined; their runs pause when reached
   owner_runs_per_day: 10        # your manual "Run search" presses per day (the 7am run is extra)
+  operator:                     # shown on the public page ("built and run by ..."); leave name empty to hide
+    name: ""
+    role: ""
+    url: ""
   plans:                        # what each plan gets; the owner is unlimited
     free:
       label: Free

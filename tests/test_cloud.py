@@ -206,6 +206,16 @@ class TestWebapp(unittest.TestCase):
         self.assertEqual(order("&sort=found"), ["old", "fresh"])   # recently discovered first
         self.assertIn("posted_at", self.c.get("/api/jobs?view=review", headers=self.h).get_json()[0])
 
+    def test_public_landing_page(self):
+        html = self.c.get("/").data.decode()
+        for bit in ("never invents your experience", "Truthful by construction", "You review and submit",
+                    'property="og:image"', "Plain talk about your data", "github.com/mortalwowbagger/job-bot", "$15/month",
+                    "application/ld+json", '"@type": "WebApplication"'):
+            self.assertIn(bit, html)
+        self.assertNotIn("Who runs this", html)          # operator stays hidden until configured
+        for invented in ("users trust", "000+ ", "3x interviews", "aggregateRating"):
+            self.assertNotIn(invented, html)              # no made-up social proof
+
     def test_users_only_see_their_own_data(self):
         self.store.put_job("u2", "secret", {"status": "tailored", "company": "X", "title": "Y"})
         ids = [r["id"] for r in self.c.get("/api/jobs?view=review", headers=self.h).get_json()]

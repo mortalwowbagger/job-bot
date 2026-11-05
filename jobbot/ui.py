@@ -10,16 +10,26 @@ import json
 FIREBASE_SDK = "https://www.gstatic.com/firebasejs/10.12.2"
 
 
-def render(cfg):
+def render(cfg, landing=None):
+    """landing: {"plans", "payments_enabled", "operator", "base_url"} -> public landing page (hosted only)."""
+    from . import landing as lp
     cfg = {"hosted": False, "firebase": None, **cfg}
+    page = PAGE
+    if cfg["hosted"] and landing is not None:
+        start, end = page.index('<div id="login">'), page.index('<div id="pending"')
+        page = (page[:start] + lp.body(landing.get("plans"), landing.get("payments_enabled"), landing.get("operator"))
+                + "\n" + page[end:])
+        page = page.replace("<title>job-bot</title>", f"<title>{lp.TITLE}</title>\n" + lp.head(landing.get("base_url", "")))
+        page = page.replace("</style>", lp.CSS + "</style>", 1)
     # </ can't appear inside the inline JSON (it would end the <script> tag)
-    return PAGE.replace("__CFG__", json.dumps(cfg).replace("</", "<\\/")).replace("__SDK__", FIREBASE_SDK)
+    return page.replace("__CFG__", json.dumps(cfg).replace("</", "<\\/")).replace("__SDK__", FIREBASE_SDK)
 
 
 PAGE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#2f5bd3">
+<script>try{if(localStorage.getItem("jobbot-signed-in"))document.documentElement.classList.add("signed-in")}catch(e){}</script>
 <title>job-bot</title>
 <style>
 :root{--bg:#f6f7f9;--panel:#fff;--ink:#1b1f24;--muted:#5d6670;--line:#e3e6ea;--accent:#2f5bd3;
@@ -512,7 +522,8 @@ async function signOut(){await fb.signOut(fb.auth);showLogin()}
   const auth=A.getAuth(initializeApp(conf));
   fb={auth,...A};
   getToken=async()=>auth.currentUser?auth.currentUser.getIdToken():null;
-  A.onAuthStateChanged(auth,u=>{if(u){$("signout").style.display="";showApp()}else showLogin()});
+  A.onAuthStateChanged(auth,u=>{try{u?localStorage.setItem("jobbot-signed-in","1"):localStorage.removeItem("jobbot-signed-in")}catch(e){}
+    document.documentElement.classList.toggle("signed-in",!!u);if(u){$("signout").style.display="";showApp()}else showLogin()});
 })();
 </script></body></html>
 """

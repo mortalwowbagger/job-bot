@@ -100,7 +100,9 @@ def create_app(store, verify_token, start_run, allowed_emails=(), firebase_confi
     admins = {e.strip().lower() for e in admin_emails if e.strip()}
     allowed = {e.strip().lower() for e in allowed_emails if e.strip()} | admins
     user_cache = {}
-    page = render({"hosted": True, "firebase": firebase_config or {}})
+    page = render({"hosted": True, "firebase": firebase_config or {}}, landing={
+        "plans": cloud_cfg.get("plans"), "operator": cloud_cfg.get("operator"), "base_url": base_url,
+        "payments_enabled": bool(stripe_client and (cloud_cfg.get("stripe") or {}).get("price_monthly"))})
     counts_cache = {}
 
     @app.after_request
